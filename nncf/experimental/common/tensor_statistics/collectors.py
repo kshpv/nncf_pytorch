@@ -12,6 +12,7 @@
 from abc import ABC
 from abc import abstractmethod
 from collections import defaultdict
+from functools import partial
 from typing import Any, Dict, List, Optional, Set, Tuple, Type, TypeVar, Union
 
 from nncf.common.tensor import TensorType
@@ -267,8 +268,8 @@ class AggregatorBase:
         return self._num_samples
 
     def register_tensor(self, x: NNCFTensor) -> None:
-        if self._num_samples is not None and self._collected_samples >= self._num_samples:
-            return
+        if self.is_enough_collection():
+            return None
         self._container.append(x)
         self._collected_samples = len(self._container)
 
@@ -281,9 +282,8 @@ class AggregatorBase:
         """
         if self._collected_samples:
             stacked = self._tensor_processor.stack(self._container, axis=self._stacked_tensor_aggregation_axis)
-            additional_params = self._get_additional_params(stacked)
             aggregated = self._aggregation_fn(
-                stacked, axis=self._stacked_tensor_all_aggregation_axes, keepdims=self._keepdims, **additional_params
+                stacked, axis=self._stacked_tensor_all_aggregation_axes, keepdims=self._keepdims
             )
             return self._postprocess_output(aggregated)
         return None
@@ -292,52 +292,28 @@ class AggregatorBase:
         self._container = []
         self._collected_samples = len(self._container)
 
-    def _get_additional_params(self, stacked_samples):
-        return {}
+    def is_enough_collection(self):
+        if self._num_samples is not None and self._collected_samples >= self._num_samples:
+            return True
 
     def _postprocess_output(self, aggregated):
         return self._tensor_processor.squeeze(aggregated, self._stacked_tensor_aggregation_axis).tensor
 
 
 class NoopAggregator(AggregatorBase):  # TODO: change by NoopAggregator with num_smaples=1
-    def __init__(self, num_samples: Optional[int] = None):
-        super().__init__(None, None, num_samples=num_samples)
+    def __init__(self, tensor_processor, num_samples: Optional[int] = None):
+        super().__init__(tensor_processor, lambda x, axis, keepdims: x, num_samples=num_samples)
 
-    def aggregate(self):
-        return [x.tensor for x in self._container]
+    def _postprocess_output(self, aggregated):
+        return aggregated.tensor
 
 
 class ShapeAggregator(AggregatorBase):  # TODO: change by NoopAggregator with num_smaples=1
-    def __init__(self):
-        super().__init__(None, None, num_samples=1)
+    def __init__(self, tensor_processor):
+        super().__init__(tensor_processor, lambda x, axis, keepdims: x, num_samples=1)
 
-    def aggregate(self):
-        return self._container[0].shape
-
-
-class NoOutliersAggregatorBase(AggregatorBase):
-    def __init__(
-        self,
-        tensor_processor: NNCFCollectorTensorProcessor,
-        aggregation_fn,
-        aggregation_axes: Optional[AggregationAxes] = None,
-        num_samples: Optional[int] = None,
-        quantile: float = 0.01,
-    ):
-        super().__init__(tensor_processor, aggregation_fn, aggregation_axes=aggregation_axes, num_samples=num_samples)
-        self._quantile = quantile
-
-    def _get_additional_params(self, stacked_samples):
-        low_values, high_values = self._tensor_processor.quantile(
-            stacked_samples,
-            quantile=(self._quantile, 1 - self._quantile),
-            axis=self._stacked_tensor_all_aggregation_axes,
-        )
-        outliers_mask = self._tensor_processor.logical_or(
-            self._tensor_processor.less(stacked_samples, low_values),
-            self._tensor_processor.less(high_values, stacked_samples),
-        )
-        return {"mask": outliers_mask}
+    def _postprocess_output(self, aggregated):
+        return self._tensor_processor.squeeze(aggregated, self._stacked_tensor_aggregation_axis).shape
 
 
 class PercentileAggregator(AggregatorBase):
@@ -352,9 +328,6 @@ class PercentileAggregator(AggregatorBase):
         super().__init__(tensor_processor, aggregation_fn, aggregation_axes=aggregation_axes, num_samples=num_samples)
         self._percentiles_to_collect = percentiles_to_collect
 
-    def _get_additional_params(self, stacked_samples):
-        return {"percentile": self._percentiles_to_collect}
-
     def _postprocess_output(self, percentiles):
         retval = {}
         for idx, percentile in enumerate(self._percentiles_to_collect):
@@ -365,32 +338,14 @@ class PercentileAggregator(AggregatorBase):
 
 
 class MedianAbsoluteDeviationAggregator(AggregatorBase):
-    def _get_additional_params(self, stacked):
-        mask = self._tensor_processor.zero_elements(stacked)
-        median_per_ch = self._tensor_processor.masked_median(
-            stacked, mask=mask, axis=self._stacked_tensor_all_aggregation_axes, keepdims=True
-        )
-        return median_per_ch, self._tensor_processor.abs(self._tensor_processor.sub(stacked, median_per_ch))
-
-    def _postprocess_output(self, mad_values, median_per_ch):
+    def _postprocess_output(self, vals):
+        median_per_ch, mad_values = vals
         squeezed_median_per_ch = self._tensor_processor.squeeze(median_per_ch, self._stacked_tensor_aggregation_axis)
         squeezed_mad_values = self._tensor_processor.squeeze(mad_values, self._stacked_tensor_aggregation_axis)
         return {
             MedianMADTensorStatistic.MEDIAN_VALUES_STAT: squeezed_median_per_ch.tensor,
             MedianMADTensorStatistic.MAD_VALUES_STAT: squeezed_mad_values.tensor,
         }
-
-    def aggregate(self) -> Dict[str, NNCFTensor]:
-        if self._collected_samples:
-            stacked_val = self._tensor_processor.stack(self._container)
-            median_per_ch, preprocess_tensors = self._get_additional_params(stacked_val)
-            mad_values = self._tensor_processor.median(
-                preprocess_tensors,
-                axis=self._stacked_tensor_all_aggregation_axes,
-                keepdims=self._keepdims,
-            )
-            return self._postprocess_output(mad_values, median_per_ch)
-        return None
 
 
 class OnlineAggregatorBase(AggregatorBase):
@@ -406,8 +361,8 @@ class OnlineAggregatorBase(AggregatorBase):
         The function aggregates firstly the input tensor.
         :param NNCFTensor x: _description_
         """
-        if self._num_samples is not None and self._collected_samples >= self._num_samples:
-            return
+        if self.is_enough_collection():
+            return None
         if self._tensor_aggregation_axes is not None:  # Should aggregate firstly the tensor
             x = self._aggregation_fn(x, axis=self._tensor_aggregation_axes, keepdims=self._keepdims)
         stacked_tensors = self._tensor_processor.stack(
@@ -416,13 +371,8 @@ class OnlineAggregatorBase(AggregatorBase):
         aggregated_tensors = self._aggregation_fn(
             stacked_tensors, axis=self._stacked_tensor_aggregation_axis, keepdims=self._keepdims
         )
-        squeezed = self._tensor_processor.squeeze(aggregated_tensors, self._stacked_tensor_aggregation_axis)
-        self._container = [squeezed]
-        self._collected_samples = len(self._container)
-
-    def _aggregate_impl(self) -> NNCFTensor:
-        assert len(self._container) == 1
-        return self._container[0].tensor
+        self._container = [self._tensor_processor.squeeze(aggregated_tensors, self._stacked_tensor_aggregation_axis)]
+        self._collected_samples += 1
 
 
 class AggregatorFactory:
@@ -431,21 +381,43 @@ class AggregatorFactory:
         AggregatorType.MIN: (OnlineAggregatorBase, NNCFCollectorTensorProcessor.reduce_min),
         AggregatorType.MAX: (OnlineAggregatorBase, NNCFCollectorTensorProcessor.reduce_max),
         AggregatorType.MEAN: (AggregatorBase, NNCFCollectorTensorProcessor.mean),
-        AggregatorType.MEAN_NO_OUTLIERS: (NoOutliersAggregatorBase, NNCFCollectorTensorProcessor.masked_mean),
+        AggregatorType.MEAN_NO_OUTLIERS: (AggregatorBase, NNCFCollectorTensorProcessor.masked_mean),
         AggregatorType.MEDIAN: (AggregatorBase, NNCFCollectorTensorProcessor.median),
-        AggregatorType.MEDIAN_NO_OUTLIERS: (NoOutliersAggregatorBase, NNCFCollectorTensorProcessor.masked_median),
+        AggregatorType.MEDIAN_NO_OUTLIERS: (AggregatorBase, NNCFCollectorTensorProcessor.masked_median),
+        AggregatorType.PERCENTILE: (PercentileAggregator, NNCFCollectorTensorProcessor.percentile),
+        AggregatorType.MEDIAN_ABSOLUTE_DEVIATION: (
+            MedianAbsoluteDeviationAggregator,
+            NNCFCollectorTensorProcessor.percentile,
+        ),
     }
 
     @staticmethod
-    def create_aggregator(aggregator_type: AggregatorType, tensor_processor, **kwargs):
+    def create_aggregator(
+        aggregator_type: AggregatorType, tensor_processor, num_samples=None, aggregation_axes=None, **func_kwargs
+    ):
         aggregator_cls, aggregation_fn = AggregatorFactory.AGGREGATORS_MAP[aggregator_type]
+        if "percentiles_to_collect" in func_kwargs:
+            return aggregator_cls(
+                tensor_processor,
+                aggregation_fn=AggregatorFactory._get_func(
+                    aggregator_type,
+                    tensor_processor,
+                    **{"percentile": func_kwargs["percentiles_to_collect"]},
+                ),
+                aggregation_axes=aggregation_axes,
+                num_samples=num_samples,
+                **func_kwargs,
+            )
         return aggregator_cls(
-            tensor_processor, aggregation_fn=AggregatorFactory._get_func(aggregator_type, tensor_processor), **kwargs
+            tensor_processor,
+            aggregation_fn=AggregatorFactory._get_func(aggregator_type, tensor_processor, **func_kwargs),
+            aggregation_axes=aggregation_axes,
+            num_samples=num_samples,
         )
 
     # TODO: should be removed after common Tensor  update
     @staticmethod
-    def _get_func(aggregator_type, tensor_processor):
+    def _get_func(aggregator_type, tensor_processor, **kwargs):
         if aggregator_type == AggregatorType.MIN:
             return tensor_processor.reduce_min
         if aggregator_type == AggregatorType.MAX:
@@ -455,9 +427,13 @@ class AggregatorFactory:
         if aggregator_type == AggregatorType.MEDIAN:
             return tensor_processor.median
         if aggregator_type == AggregatorType.MEAN_NO_OUTLIERS:
-            return tensor_processor.masked_mean
+            return partial(tensor_processor.mean_outliers_mask, **kwargs)
         if aggregator_type == AggregatorType.MEDIAN_NO_OUTLIERS:
-            return tensor_processor.masked_median
+            return partial(tensor_processor.median_outliers_mask, **kwargs)
+        if aggregator_type == AggregatorType.PERCENTILE:
+            return partial(tensor_processor.percentile, **kwargs)
+        if aggregator_type == AggregatorType.MEDIAN_ABSOLUTE_DEVIATION:
+            return tensor_processor.median_absolute_deviation
 
 
 class TensorCollector:

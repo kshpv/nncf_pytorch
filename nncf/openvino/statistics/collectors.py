@@ -185,6 +185,61 @@ class OVNNCFCollectorTensorProcessor(NNCFCollectorTensorProcessor):
     ) -> NNCFTensor:
         return x
 
+    @classmethod
+    def outliers_mask(
+        cls,
+        x: NNCFTensor,
+        axis: Union[int, Tuple[int, ...], List[int]],
+        quantile: float = 0.01,
+    ) -> NNCFTensor:
+        low_values, high_values = cls.quantile(
+            x,
+            quantile=(quantile, 1 - quantile),
+            axis=axis,
+        )
+        return cls.logical_or(
+            cls.less(x, low_values),
+            cls.less(high_values, x),
+        )
+
+    @classmethod
+    def mean_outliers_mask(
+        cls,
+        x: NNCFTensor,
+        axis: Union[int, Tuple[int, ...], List[int]],
+        keepdims: bool = False,
+        quantile: float = 0.01,
+    ) -> NNCFTensor:
+        mask = cls.outliers_mask(x, axis=axis, quantile=quantile)
+        return cls.masked_mean(x, mask=mask, axis=axis, keepdims=keepdims)
+
+    @classmethod
+    def median_outliers_mask(
+        cls,
+        x: NNCFTensor,
+        axis: Union[int, Tuple[int, ...], List[int]],
+        keepdims: bool = False,
+        quantile: float = 0.01,
+    ) -> NNCFTensor:
+        mask = cls.outliers_mask(x, axis=axis, quantile=quantile)
+        return cls.masked_median(x, mask=mask, axis=axis, keepdims=keepdims)
+
+    @classmethod
+    def median_absolute_deviation(
+        cls,
+        x: NNCFTensor,
+        axis: Union[int, Tuple[int, ...], List[int]],
+        keepdims: bool = False,
+    ):
+        mask = cls.zero_elements(x)
+        median_per_ch = cls.masked_median(x, mask=mask, axis=axis, keepdims=True)
+        preprocess_tensors = cls.abs(cls.sub(x, median_per_ch))
+        return median_per_ch, cls.median(
+            preprocess_tensors,
+            axis=axis,
+            keepdims=keepdims,
+        )
+
 
 class OVNoopReducer(NoopReducer):
     def get_output_names(self, target_node_name: str, port_id: int) -> List[str]:
@@ -297,10 +352,7 @@ def get_mean_statistic_collector(num_samples: int, channel_axis: int, inplace: b
         reducer = OVMeanPerChanelReducer(channel_axis=channel_axis, inplace=inplace)
     noop_reducer = OVNoopReducer()
 
-    kwargs = {
-        "tensor_processor": OVNNCFCollectorTensorProcessor,
-        "num_samples": num_samples,
-    }
+    kwargs = {"tensor_processor": OVNNCFCollectorTensorProcessor, "num_samples": num_samples, "aggregation_axes": None}
     from nncf.quantization.advanced_parameters import AggregatorType
 
     aggregate_mean = AggregatorFactory.create_aggregator(AggregatorType.MEAN, **kwargs)

@@ -11,7 +11,6 @@
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from functools import partial
 from itertools import product
 from typing import Any, List, Optional, Tuple
 
@@ -22,9 +21,7 @@ from nncf.common.graph.layer_attributes import Dtype
 from nncf.common.tensor_statistics.collectors import NNCFCollectorTensorProcessor
 from nncf.experimental.common.tensor_statistics.collectors import AggregationAxes
 from nncf.experimental.common.tensor_statistics.collectors import AggregatorFactory
-from nncf.experimental.common.tensor_statistics.collectors import MedianAbsoluteDeviationAggregator
 from nncf.experimental.common.tensor_statistics.collectors import NoopAggregator
-from nncf.experimental.common.tensor_statistics.collectors import PercentileAggregator
 from nncf.experimental.common.tensor_statistics.collectors import ShapeAggregator
 from nncf.quantization.range_estimator import AggregatorType
 
@@ -150,7 +147,7 @@ class TemplateTestReducersAggreagtors:
         assert self.all_close(val[0].tensor, self.cast_tensor(ref, Dtype.FLOAT))
 
     def test_noop_aggregator(self, tensor_processor):
-        aggregator = NoopAggregator()  # AggregatorBase(tensor_processor, tensor_processor.no_op)
+        aggregator = NoopAggregator(tensor_processor)  # AggregatorBase(tensor_processor, tensor_processor.no_op)
 
         ref_shape = (1, 3, 5, 7, 9)
         input_ = np.arange(np.prod(ref_shape)).reshape(ref_shape)
@@ -164,8 +161,8 @@ class TemplateTestReducersAggreagtors:
         for val in aggregated:
             assert self.all_close(val, input_)
 
-    def test_shape_aggregator(self):
-        aggregator = ShapeAggregator()
+    def test_shape_aggregator(self, tensor_processor):
+        aggregator = ShapeAggregator(tensor_processor)
         ref_shape = (1, 3, 5, 7, 9)
         input_ = np.empty(ref_shape)
         for _ in range(3):
@@ -268,7 +265,7 @@ class TemplateTestReducersAggreagtors:
             aggregator.register_tensor(self.get_nncf_tensor(input_ * i, Dtype.FLOAT))
         # this registration is to make diff between mean and median bigger
         aggregator.register_tensor(self.get_nncf_tensor(input_ * 10, Dtype.FLOAT))
-        is_median = aggregator._aggregation_fn in (tensor_processor.median, tensor_processor.masked_median)
+        is_median = aggregator_type in [AggregatorType.MEDIAN_NO_OUTLIERS, AggregatorType.MEDIAN]
         # Outliers registration
         for i in range(2):
             # mult is needed to make outlier and no outlier aggreagators differs
@@ -284,7 +281,7 @@ class TemplateTestReducersAggreagtors:
         assert self.all_close(ret_val, self.cast_tensor(refs, Dtype.FLOAT))
 
     REF_MAD_PERCENTILE_REF_VALUES = {
-        MedianAbsoluteDeviationAggregator: {
+        AggregatorType.MEDIAN_ABSOLUTE_DEVIATION: {
             None: {
                 "median_values": np.array([4.5, 9.0, 13.5, 18.0, 22.5, 27.0, 31.5, 36.0, 40.5]),
                 "mad_values": np.array([2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 17.5, 20.0, 22.5]),
@@ -294,7 +291,7 @@ class TemplateTestReducersAggreagtors:
                 "mad_values": np.array([12.0]),
             },
         },
-        PercentileAggregator: {
+        AggregatorType.PERCENTILE: {
             None: {
                 5: np.array([0.4, 0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2, 3.6]),
                 10: np.array([0.8, 1.6, 2.4, 3.2, 4.0, 4.8, 5.6, 6.4, 7.2]),
@@ -311,28 +308,29 @@ class TemplateTestReducersAggreagtors:
     }
 
     @pytest.mark.parametrize(
-        "aggregator_cls",
+        ("aggregator_type", "additional_params"),
         [
-            MedianAbsoluteDeviationAggregator,
-            partial(
-                PercentileAggregator,
-                percentiles_to_collect=[5, 10, 90, 95],
+            (AggregatorType.MEDIAN_ABSOLUTE_DEVIATION, {}),
+            (
+                AggregatorType.PERCENTILE,
+                {"percentiles_to_collect": [5, 10, 90, 95]},
             ),
         ],
     )
     @pytest.mark.parametrize("aggregation_axes", [None, (0,)])
-    def test_mad_percentile_aggregators(self, aggregator_cls, tensor_processor, aggregation_axes):
-        aggregation_fn = tensor_processor.percentile
-        # aggregation_fn = None if aggregator_cls == PercentileAggregator
-        aggregator = aggregator_cls(
-            aggregation_fn=aggregation_fn, tensor_processor=tensor_processor, aggregation_axes=aggregation_axes
+    def test_mad_percentile_aggregators(self, aggregator_type, additional_params, tensor_processor, aggregation_axes):
+        aggregator = AggregatorFactory.create_aggregator(
+            aggregator_type,
+            tensor_processor=tensor_processor,
+            aggregation_axes=aggregation_axes,
+            **additional_params,
         )
         input_ = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9], dtype=np.float32)
         for i in range(9):
             aggregator.register_tensor(self.get_nncf_tensor(input_ * i, Dtype.FLOAT))
 
         ret_val = aggregator.aggregate()
-        ref_values = self.REF_MAD_PERCENTILE_REF_VALUES[aggregator.__class__][aggregation_axes]
+        ref_values = self.REF_MAD_PERCENTILE_REF_VALUES[aggregator_type][aggregation_axes]
         assert len(ret_val) == len(ref_values)
         for k, v in ref_values.items():
             assert self.all_close(ret_val[k], self.cast_tensor(v, Dtype.FLOAT))

@@ -59,6 +59,8 @@ class AggregatorType(Enum):
     MEDIAN = "median"
     MEAN_NO_OUTLIERS = "mean_no_outliers"
     MEDIAN_NO_OUTLIERS = "median_no_outliers"
+    PERCENTILE = "percentile"
+    MEDIAN_ABSOLUTE_DEVIATION = "median_absolute_deviation"
 
 
 @api()

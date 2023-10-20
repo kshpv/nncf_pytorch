@@ -72,7 +72,10 @@ class OVSmoothQuantAlgoBackend(SmoothQuantAlgoBackend):
         collector = TensorCollector()
         reducer = OVAbsMaxReducer(reduction_axes=stats_reduction_axes, inplace=inplace)
         aggregator = AggregatorFactory.create_aggregator(
-            AggregatorType.MAX, tensor_processor=OVNNCFCollectorTensorProcessor, num_samples=num_samples
+            AggregatorType.MAX,
+            tensor_processor=OVNNCFCollectorTensorProcessor,
+            num_samples=num_samples,
+            aggregation_axes=None,
         )
         collector.register_statistic_branch(branch_key, reducer, aggregator)
         return collector
