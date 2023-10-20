@@ -24,7 +24,7 @@ from nncf.common.hardware.config import HWConfig
 from nncf.common.quantization.structs import QuantizationMode
 from nncf.common.quantization.structs import QuantizerConfig
 from nncf.common.utils.backend import BackendType
-from nncf.experimental.common.tensor_statistics.collectors import AGGREGATORS_MAP
+from nncf.experimental.common.tensor_statistics.collectors import AggregatorFactory
 from nncf.experimental.common.tensor_statistics.collectors import TensorCollector
 from nncf.parameters import ModelType
 from nncf.parameters import TargetDevice
@@ -156,16 +156,6 @@ class PTMinMaxAlgoBackend(MinMaxAlgoBackend):
             [range_estimator_params.min, range_estimator_params.max],
             [PTMinMaxTensorStatistic.MIN_STAT, PTMinMaxTensorStatistic.MAX_STAT],
         ):
-            if params.statistics_type not in PT_REDUCERS_MAP:
-                raise RuntimeError(
-                    f"Statistic type: {params.statistics_type} is not supported for Torch PTQ backend yet."
-                )
-
-            if params.aggregator_type not in AGGREGATORS_MAP:
-                raise RuntimeError(
-                    f"Aggregator type: {params.aggregator_type} is not supported for Torch PTQ backend yet."
-                )
-
             statistic_type = params.statistics_type
             if statistic_type in [StatisticsType.QUANTILE, StatisticsType.ABS_QUANTILE]:
                 # TODO(dlyakhov): merge two quantile aggregators in one
@@ -178,10 +168,10 @@ class PTMinMaxAlgoBackend(MinMaxAlgoBackend):
                 if collector_params.use_abs_max and statistic_type == StatisticsType.MAX:
                     statistic_type = StatisticsType.ABS_MAX
                 reducer = PT_REDUCERS_MAP[statistic_type](reduction_axes=reduction_axes)
-
-            aggregator = AGGREGATORS_MAP[params.aggregator_type](
-                aggregation_axes=aggregation_axes,
+            aggregator = AggregatorFactory.create_aggregator(
+                params.aggregator_type,
                 num_samples=num_samples,
+                aggregation_axes=aggregation_axes,
                 tensor_processor=PTNNCFCollectorTensorProcessor,
             )
 

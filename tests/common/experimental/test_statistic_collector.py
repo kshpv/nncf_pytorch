@@ -72,7 +72,7 @@ class DummyTensorAggregator(AggregatorBase):
     def __init__(self, num_samples: Optional[int] = None):
         super().__init__(None, num_samples=num_samples)
 
-    def _register_reduced_input_impl(self, x: TensorType):
+    def _register_tensor_impl(self, x: TensorType):
         return self._container.append(x)
 
     def _aggregate_impl(self):

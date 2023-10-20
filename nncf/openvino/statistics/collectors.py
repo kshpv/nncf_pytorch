@@ -18,14 +18,14 @@ from nncf.common.tensor import TensorElementsType
 from nncf.common.tensor_statistics.collectors import NNCFCollectorTensorProcessor
 from nncf.experimental.common.tensor_statistics.collectors import AbsMaxReducer
 from nncf.experimental.common.tensor_statistics.collectors import AbsQuantileReducer
+from nncf.experimental.common.tensor_statistics.collectors import AggregatorBase
+from nncf.experimental.common.tensor_statistics.collectors import AggregatorFactory
 from nncf.experimental.common.tensor_statistics.collectors import BatchMeanReducer
 from nncf.experimental.common.tensor_statistics.collectors import InplaceInsertionFNType
 from nncf.experimental.common.tensor_statistics.collectors import MaxReducer
-from nncf.experimental.common.tensor_statistics.collectors import MeanAggregator
 from nncf.experimental.common.tensor_statistics.collectors import MeanPerChReducer
 from nncf.experimental.common.tensor_statistics.collectors import MeanReducer
 from nncf.experimental.common.tensor_statistics.collectors import MinReducer
-from nncf.experimental.common.tensor_statistics.collectors import NoopAggregator
 from nncf.experimental.common.tensor_statistics.collectors import NoopReducer
 from nncf.experimental.common.tensor_statistics.collectors import QuantileReducer
 from nncf.experimental.common.tensor_statistics.collectors import ShapeAggregator
@@ -177,6 +177,14 @@ class OVNNCFCollectorTensorProcessor(NNCFCollectorTensorProcessor):
         eps = np.finfo(np_tensor.dtype).eps
         return NNCFTensor(np.abs(np_tensor) < eps)
 
+    @staticmethod
+    def no_op(
+        x: NNCFTensor,
+        axis: Union[int, Tuple[int, ...], List[int]],
+        keepdims: bool = False,
+    ) -> NNCFTensor:
+        return x
+
 
 class OVNoopReducer(NoopReducer):
     def get_output_names(self, target_node_name: str, port_id: int) -> List[str]:
@@ -293,7 +301,9 @@ def get_mean_statistic_collector(num_samples: int, channel_axis: int, inplace: b
         "tensor_processor": OVNNCFCollectorTensorProcessor,
         "num_samples": num_samples,
     }
-    aggregate_mean = MeanAggregator(**kwargs)
+    from nncf.quantization.advanced_parameters import AggregatorType
+
+    aggregate_mean = AggregatorFactory.create_aggregator(AggregatorType.MEAN, **kwargs)
     aggregate_shape = ShapeAggregator()
 
     collector = TensorCollector(OVMeanTensorStatistic)
@@ -304,7 +314,9 @@ def get_mean_statistic_collector(num_samples: int, channel_axis: int, inplace: b
 
 def get_raw_stat_collector(num_samples, inplace=False):
     reducer = OVNoopReducer()
-    aggregator = NoopAggregator(num_samples)
+    aggregator = AggregatorBase(
+        OVNNCFCollectorTensorProcessor, OVNNCFCollectorTensorProcessor.no_op, num_samples=num_samples
+    )
 
     collector = TensorCollector(OVRawTensorStatistic)
     collector.register_statistic_branch(OVRawTensorStatistic.VALUES_STATS, reducer, aggregator)

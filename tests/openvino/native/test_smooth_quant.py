@@ -18,9 +18,11 @@ import pytest
 import torch
 from openvino.tools.mo import convert_model
 
+from nncf.common.tensor_statistics.collectors import NNCFCollectorTensorProcessor
 from nncf.openvino.graph.layer_attributes import OVLayerAttributes
 from nncf.openvino.graph.metatypes.openvino_metatypes import OVConvolutionMetatype
 from nncf.openvino.graph.metatypes.openvino_metatypes import OVMatMulMetatype
+from nncf.openvino.statistics.collectors import OVNNCFCollectorTensorProcessor
 from nncf.quantization.algorithms.smooth_quant.openvino_backend import OVSmoothQuantAlgoBackend
 from tests.post_training.test_templates.test_smooth_quant import TemplateTestSQAlgorithm
 
@@ -37,6 +39,10 @@ class TestOVSQAlgorithm(TemplateTestSQAlgorithm):
             return {"input.1": tensor}
 
         return transform_fn
+
+    @staticmethod
+    def tensor_processor() -> NNCFCollectorTensorProcessor:
+        return OVNNCFCollectorTensorProcessor()
 
     @staticmethod
     def get_backend() -> OVSmoothQuantAlgoBackend:

@@ -9,7 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set
 
 import numpy as np
 
@@ -22,7 +22,7 @@ from nncf.common.quantization.structs import QuantizationMode
 from nncf.common.quantization.structs import QuantizerConfig
 from nncf.common.tensor_statistics.collectors import ReductionAxes
 from nncf.common.utils.backend import BackendType
-from nncf.experimental.common.tensor_statistics.collectors import AGGREGATORS_MAP
+from nncf.experimental.common.tensor_statistics.collectors import AggregatorFactory
 from nncf.experimental.common.tensor_statistics.collectors import TensorCollector
 from nncf.openvino.graph.layer_attributes import OVLayerAttributes
 from nncf.openvino.graph.metatypes import openvino_metatypes as om
@@ -192,11 +192,11 @@ class OVMinMaxAlgoBackend(MinMaxAlgoBackend):
             if use_abs_max and statistic_type == StatisticsType.MAX:
                 statistic_type = StatisticsType.ABS_MAX
             reducer = OV_REDUCERS_MAP[statistic_type](**kwargs)
-
-            aggregator = AGGREGATORS_MAP[params.aggregator_type](
+            aggregator = AggregatorFactory.create_aggregator(
+                params.aggregator_type,
+                tensor_processor=OVNNCFCollectorTensorProcessor,
                 num_samples=num_samples,
                 aggregation_axes=aggregation_axes,
-                tensor_processor=OVNNCFCollectorTensorProcessor,
             )
 
             collector.register_statistic_branch(container_key, reducer, aggregator)

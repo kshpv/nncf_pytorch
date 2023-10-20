@@ -21,20 +21,19 @@ from nncf.common.tensor_statistics.collectors import NNCFTensor
 from nncf.experimental.common.tensor_statistics.collectors import AbsMaxReducer
 from nncf.experimental.common.tensor_statistics.collectors import AbsQuantileReducer
 from nncf.experimental.common.tensor_statistics.collectors import AggregatorBase
+from nncf.experimental.common.tensor_statistics.collectors import AggregatorFactory
 from nncf.experimental.common.tensor_statistics.collectors import BatchMeanReducer
-from nncf.experimental.common.tensor_statistics.collectors import MaxAggregator
 from nncf.experimental.common.tensor_statistics.collectors import MaxReducer
-from nncf.experimental.common.tensor_statistics.collectors import MeanAggregator
 from nncf.experimental.common.tensor_statistics.collectors import MeanPerChReducer
 from nncf.experimental.common.tensor_statistics.collectors import MeanReducer
 from nncf.experimental.common.tensor_statistics.collectors import MedianAbsoluteDeviationAggregator
-from nncf.experimental.common.tensor_statistics.collectors import MinAggregator
 from nncf.experimental.common.tensor_statistics.collectors import MinReducer
 from nncf.experimental.common.tensor_statistics.collectors import NoopReducer
 from nncf.experimental.common.tensor_statistics.collectors import PercentileAggregator
 from nncf.experimental.common.tensor_statistics.collectors import QuantileReducer
 from nncf.experimental.common.tensor_statistics.collectors import ShapeAggregator
 from nncf.experimental.common.tensor_statistics.collectors import TensorCollector
+from nncf.quantization.advanced_parameters import AggregatorType
 from nncf.quantization.advanced_parameters import StatisticsType
 from nncf.torch.tensor import PTNNCFTensor
 from nncf.torch.tensor_statistics.statistics import PTMeanTensorStatistic
@@ -303,12 +302,20 @@ def get_min_max_statistic_collector(
         "aggregation_axes": aggregation_axes,
     }
     min_reducer = PTMinReducer(reduction_axes)
-    min_aggregator = MinAggregator(**aggregator_kwargs)
+    min_aggregator = AggregatorFactory.create_aggregator(
+        AggregatorType.MIN,
+        PTNNCFCollectorTensorProcessor,
+        **aggregator_kwargs,
+    )
     tensor_collector.register_statistic_branch(PTMinMaxTensorStatistic.MIN_STAT, min_reducer, min_aggregator)
 
     max_reducer_cls = PTAbsMaxReducer if use_abs_max else PTMaxReducer
     max_reducer = max_reducer_cls(reduction_axes)
-    max_aggregator = MaxAggregator(**aggregator_kwargs)
+    max_aggregator = AggregatorFactory.create_aggregator(
+        AggregatorType.MAX,
+        PTNNCFCollectorTensorProcessor,
+        **aggregator_kwargs,
+    )
     tensor_collector.register_statistic_branch(PTMinMaxTensorStatistic.MAX_STAT, max_reducer, max_aggregator)
     return tensor_collector
 
@@ -346,14 +353,20 @@ def get_mixed_min_max_statistic_collector(
         "aggregation_axes": aggregation_axes,
         "window_size": window_size,
     }
-    min_aggregator_cls = MeanAggregator if use_means_of_mins else MinAggregator
-    min_aggregator = min_aggregator_cls(**kwargs)
+    min_aggregator = AggregatorFactory.create_aggregator(
+        AggregatorType.MEAN if use_means_of_maxs else AggregatorType.MIN,
+        PTNNCFCollectorTensorProcessor,
+        **kwargs,
+    )
     tensor_collector.register_statistic_branch(PTMinMaxTensorStatistic.MIN_STAT, min_reducer, min_aggregator)
 
     max_reducer_cls = PTAbsMaxReducer if use_abs_max else PTMaxReducer
     max_reducer = max_reducer_cls(reduction_axes)
-    max_aggregator_cls = MeanAggregator if use_means_of_maxs else MaxAggregator
-    max_aggregator = max_aggregator_cls(**kwargs)
+    max_aggregator = AggregatorFactory.create_aggregator(
+        AggregatorType.MEAN if use_means_of_maxs else AggregatorType.MAX,
+        PTNNCFCollectorTensorProcessor,
+        **kwargs,
+    )
     tensor_collector.register_statistic_branch(PTMinMaxTensorStatistic.MAX_STAT, max_reducer, max_aggregator)
 
     return tensor_collector
@@ -466,7 +479,6 @@ def get_mean_percentile_statistic_collector(
     aggregation_axes: Tuple[int, ...],
     scale_shape: Tuple[int, ...],
     num_samples: int,
-    window_size: Optional[int] = None,
 ) -> TensorCollector:
     """
     Mean percentile statistic collector builder.
@@ -476,19 +488,17 @@ def get_mean_percentile_statistic_collector(
     :param aggregation_axes: Axes to use in aggregation functions.
     :param scale_shape: Target shape for collected statistics.
     :param num_samples: Maximum number of samples to collect.
-    :param window_size: Number of samples from the end of the list of collected samples to aggregate.
-        Aggregates all available collected statistics in case parameter is None.
     :return: Mean percentile statistic collector.
     """
     tensor_collector = TensorCollector(_get_wrapped_percentile_tensor_statistic(target_shape=scale_shape))
     quantiles_to_collect = np.true_divide(percentiles_to_collect, 100)
     reducer = PTQuantileReducer(reduction_axes=reduction_axes, quantile=quantiles_to_collect)
     for output_port_id, p in enumerate(percentiles_to_collect):
-        aggregator = MeanAggregator(
+        aggregator = AggregatorFactory.create_aggregator(
+            AggregatorType.MEAN,
             PTNNCFCollectorTensorProcessor,
             aggregation_axes=aggregation_axes,
             num_samples=num_samples,
-            window_size=window_size,
         )
         tensor_collector.register_statistic_branch(
             (PTPercentileTensorStatistic.PERCENTILE_VS_VALUE_DICT, p), reducer, aggregator, output_port_id
@@ -516,7 +526,11 @@ def get_mean_statistic_collector(num_samples: int, channel_axis: int) -> TensorC
         "tensor_processor": PTNNCFCollectorTensorProcessor,
         "num_samples": num_samples,
     }
-    aggregate_mean = MeanAggregator(**kwargs)
+    aggregate_mean = AggregatorFactory.create_aggregator(
+        AggregatorType.MEAN,
+        PTNNCFCollectorTensorProcessor,
+        **kwargs,
+    )
     aggregate_shape = ShapeAggregator()
 
     collector = TensorCollector(PTMeanTensorStatistic)

@@ -17,8 +17,9 @@ import pytest
 from nncf.common.factory import NNCFGraphFactory
 from nncf.common.factory import StatisticsAggregatorFactory
 from nncf.common.graph.graph import NNCFNode
+from nncf.common.tensor_statistics.collectors import NNCFCollectorTensorProcessor
 from nncf.experimental.common.tensor_statistics.collectors import AbsMaxReducer
-from nncf.experimental.common.tensor_statistics.collectors import MaxAggregator
+from nncf.experimental.common.tensor_statistics.collectors import OnlineAggregatorBase
 from nncf.parameters import ModelType
 from nncf.quantization.advanced_parameters import AdvancedQuantizationParameters
 from nncf.quantization.advanced_parameters import OverflowFix
@@ -37,6 +38,13 @@ class TemplateTestSQAlgorithm:
     @staticmethod
     def fn_to_type(tensor) -> TTensor:
         return tensor
+
+    @staticmethod
+    @abstractmethod
+    def tensor_processor() -> NNCFCollectorTensorProcessor:
+        """
+        Backend specific TensorProcessor.
+        """
 
     @staticmethod
     @abstractmethod
@@ -140,7 +148,8 @@ class TemplateTestSQAlgorithm:
             )
 
             for aggregator in backend_tensor_collector.aggregators.values():
-                assert isinstance(aggregator, MaxAggregator)
+                assert aggregator._aggregation_fn == self.tensor_processor().reduce_max
+                assert isinstance(aggregator, OnlineAggregatorBase)
 
             for reducer in backend_tensor_collector.reducers:
                 assert isinstance(reducer, AbsMaxReducer)
