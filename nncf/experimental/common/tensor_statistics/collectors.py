@@ -313,7 +313,34 @@ class ShapeAggregator(AggregatorBase):  # TODO: change by NoopAggregator with nu
         super().__init__(tensor_processor, lambda x, axis, keepdims: x, num_samples=1)
 
     def _postprocess_output(self, aggregated):
-        return self._tensor_processor.squeeze(aggregated, self._stacked_tensor_aggregation_axis).shape
+        return super()._postprocess_output(aggregated).shape
+
+
+class OnlineAggregatorBase(AggregatorBase):
+    """
+    Base class for aggregators which are using aggregation function fn with following property:
+    fn([x1, x2, x3]) == fn([fn([x1, x2]), x3]) where x1, x2, x3 are samples to aggregate.
+    Online aggregation fn([fn([x1, x2]), x3]) allows to keep memory stamp low as only
+    one sample is stored during statistic collection.
+    """
+
+    def register_tensor(self, x: NNCFTensor) -> None:
+        """
+        The function aggregates firstly the input tensor.
+        :param NNCFTensor x: _description_
+        """
+        if self.is_enough_collection():
+            return None
+        if self._tensor_aggregation_axes is not None:  # Should aggregate firstly the tensor
+            x = self._aggregation_fn(x, axis=self._tensor_aggregation_axes, keepdims=self._keepdims)
+        stacked_tensors = self._tensor_processor.stack(
+            [x, *self._container], axis=self._stacked_tensor_aggregation_axis
+        )
+        aggregated_tensors = self._aggregation_fn(
+            stacked_tensors, axis=self._stacked_tensor_aggregation_axis, keepdims=self._keepdims
+        )
+        self._container = [self._tensor_processor.squeeze(aggregated_tensors, self._stacked_tensor_aggregation_axis)]
+        self._collected_samples += 1
 
 
 class PercentileAggregator(AggregatorBase):
@@ -346,33 +373,6 @@ class MedianAbsoluteDeviationAggregator(AggregatorBase):
             MedianMADTensorStatistic.MEDIAN_VALUES_STAT: squeezed_median_per_ch.tensor,
             MedianMADTensorStatistic.MAD_VALUES_STAT: squeezed_mad_values.tensor,
         }
-
-
-class OnlineAggregatorBase(AggregatorBase):
-    """
-    Base class for aggregators which are using aggregation function fn with following property:
-    fn([x1, x2, x3]) == fn([fn([x1, x2]), x3]) where x1, x2, x3 are samples to aggregate.
-    Online aggregation fn([fn([x1, x2]), x3]) allows to keep memory stamp low as only
-    one sample is stored during statistic collection.
-    """
-
-    def register_tensor(self, x: NNCFTensor) -> None:
-        """
-        The function aggregates firstly the input tensor.
-        :param NNCFTensor x: _description_
-        """
-        if self.is_enough_collection():
-            return None
-        if self._tensor_aggregation_axes is not None:  # Should aggregate firstly the tensor
-            x = self._aggregation_fn(x, axis=self._tensor_aggregation_axes, keepdims=self._keepdims)
-        stacked_tensors = self._tensor_processor.stack(
-            [x, *self._container], axis=self._stacked_tensor_aggregation_axis
-        )
-        aggregated_tensors = self._aggregation_fn(
-            stacked_tensors, axis=self._stacked_tensor_aggregation_axis, keepdims=self._keepdims
-        )
-        self._container = [self._tensor_processor.squeeze(aggregated_tensors, self._stacked_tensor_aggregation_axis)]
-        self._collected_samples += 1
 
 
 class AggregatorFactory:
