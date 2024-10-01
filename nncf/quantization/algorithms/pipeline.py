@@ -46,7 +46,7 @@ def collect_statistics(
     statistics_aggregator = StatisticsAggregatorFactory.create(model, dataset)
     for container in containers:
         statistics_aggregator.register_statistic_points(container)
-    statistics_aggregator.collect_statistics(model, graph)
+    # statistics_aggregator.collect_statistics(model, graph)
 
     return statistics_aggregator.statistic_points
 

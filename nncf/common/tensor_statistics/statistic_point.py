@@ -140,6 +140,27 @@ class StatisticPointsContainer(UserDict):  # type: ignore
         with open(stat_filename, "wb") as f:
             pickle.dump(data_to_dump, f)
 
+    def load_statistics_from_file(self, filename):
+        with open(filename, "rb") as f:
+            data = pickle.load(f)
+
+        for stat_data in data:  # TODO: optimize to have 1 cycle
+            is_loaded = False
+            for algorithm, statistic_point, tensor_collector in self.get_tensor_collectors():
+                tp = statistic_point.target_point
+                tp_info = f"{tp.target_node_name}_{tp.type}_{tp.port_id}"
+                statistics = tensor_collector.get_statistics()
+                dumped_data = statistics.get_statistic_info(tp_info)
+                is_same_type = stat_data["type"] == dumped_data["type"]
+                is_same_tp = stat_data["target_node_info"] == dumped_data["target_node_info"]
+                if is_same_type and is_same_tp:
+                    statistics.load_dumped_data(stat_data)
+                    is_loaded = True
+                    break
+                tensor_collector.is_built = True
+            assert is_loaded
+        return
+
     # def get_statistics(self):
     #     for algorithm, statistic_point, tensor_collector in self.get_tensor_collectors():
     #         statistic_point.target_point tensor_collector.get_statistics()

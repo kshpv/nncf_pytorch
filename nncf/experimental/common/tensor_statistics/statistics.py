@@ -41,6 +41,9 @@ class MinMaxTensorStatistic(TensorStatistic):
             return fns.allclose(self.min_values, other.min_values) and fns.allclose(self.max_values, other.max_values)
         return False
 
+    def get_statistic_info(self, target_node_info):
+        return {"type": "MinMaxTensorStatistic", "target_node_info": target_node_info}
+
     def get_dumped_data(self, target_node_info):
         return {
             "type": "MinMaxTensorStatistic",
@@ -48,6 +51,13 @@ class MinMaxTensorStatistic(TensorStatistic):
             "min_values": np.array(self.min_values.data),
             "max_values": np.array(self.max_values.data),
         }
+
+    def load_dumped_data(self, data):
+        self.load_data(data["min_values"], data["max_values"])
+
+    def load_data(self, min_values, max_values):
+        self.min_values = Tensor(min_values)
+        self.max_values = Tensor(max_values)
 
     def dump(self, stat_filename, target_node_info):
         data = {
@@ -81,6 +91,16 @@ class MeanTensorStatistic(TensorStatistic):
             "mean_values": np.array(self.mean_values.data),
             "shape": np.array(self.shape),
         }
+
+    def get_statistic_info(self, target_node_info):
+        return {"type": "MinMaxTensorStatistic", "target_node_info": target_node_info}
+
+    def load_dumped_data(self, data):
+        self.load_data(data["mean_values"], data["shape"])
+
+    def load_data(self, mean_values, shape):
+        self.mean_values = Tensor(mean_values)
+        self.shape = tuple(shape)
 
     def dump(self, stat_filename, target_node_info):
         data = {

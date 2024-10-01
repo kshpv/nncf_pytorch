@@ -199,6 +199,7 @@ class TensorCollector:
         self._stat_container_kwargs_map: Dict[str, Tuple[int, int, int]] = {}
         self._stat_container = statistic_container
         self._enabled = True
+        self.is_built = False
 
     @property
     def num_samples(self) -> Optional[int]:
@@ -323,7 +324,8 @@ class TensorCollector:
 
         :returns: Aggregated values.
         """
-
+        if self.is_built:
+            return self.statistics
         aggregated_values = self._aggregate()
         kwargs = {}
         for container_key, branch_key in self._stat_container_kwargs_map.items():
@@ -331,7 +333,9 @@ class TensorCollector:
 
         if not self._stat_container:
             return kwargs
-        return self._build_statistic_container(self._stat_container, kwargs)
+        self.statistics = self._build_statistic_container(self._stat_container, kwargs)
+        self.is_built = True
+        return self.statistics
 
     def get_inplace_fn_info(self) -> List[Tuple[Any, int]]:
         """
