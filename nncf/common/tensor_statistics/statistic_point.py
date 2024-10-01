@@ -9,6 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import pickle
 from collections import UserDict
 from typing import Any, Callable, Generator, Optional, Tuple, cast
 
@@ -125,3 +126,20 @@ class StatisticPointsContainer(UserDict):  # type: ignore
         for _statistic_point in self.iter_through_statistic_points_in_target_node(target_node_name, filter_fn):
             for _tensor_collector in _statistic_point.algorithm_to_tensor_collectors[algorithm]:
                 yield _tensor_collector
+
+    def dump_statistics(self, dir):
+        data_to_dump = []
+
+        stat_filename = "statistics.pkl"
+        for algorithm, statistic_point, tensor_collector in self.get_tensor_collectors():
+            tp = statistic_point.target_point
+            tp_info = f"{tp.target_node_name}_{tp.type}_{tp.port_id}"
+            statistics = tensor_collector.get_statistics()
+            data = statistics.get_dumped_data(tp_info)
+            data_to_dump.append(data)
+        with open(stat_filename, "wb") as f:
+            pickle.dump(data_to_dump, f)
+
+    # def get_statistics(self):
+    #     for algorithm, statistic_point, tensor_collector in self.get_tensor_collectors():
+    #         statistic_point.target_point tensor_collector.get_statistics()

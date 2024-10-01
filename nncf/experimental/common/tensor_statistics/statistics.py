@@ -11,9 +11,12 @@
 
 from __future__ import annotations
 
+import pickle
 from collections import Counter
 from dataclasses import dataclass
 from typing import ClassVar, Dict, Tuple
+
+import numpy as np
 
 from nncf.tensor import Tensor
 from nncf.tensor import functions as fns
@@ -38,6 +41,25 @@ class MinMaxTensorStatistic(TensorStatistic):
             return fns.allclose(self.min_values, other.min_values) and fns.allclose(self.max_values, other.max_values)
         return False
 
+    def get_dumped_data(self, target_node_info):
+        return {
+            "type": "MinMaxTensorStatistic",
+            "target_node_info": target_node_info,
+            "min_values": np.array(self.min_values.data),
+            "max_values": np.array(self.max_values.data),
+        }
+
+    def dump(self, stat_filename, target_node_info):
+        data = {
+            "type": "MinMaxTensorStatistic",
+            "target_node_info": target_node_info,
+            "min_values": np.array(self.min_values.data),
+            "max_values": np.array(self.max_values.data),
+        }
+        with open(stat_filename, "wb") as f:
+            pickle.dump(data, f)
+        # np.savez(stat_filename, min_values=np.array(self.min_values.data), max_values=np.array(self.max_values.data))
+
 
 @dataclass
 class MeanTensorStatistic(TensorStatistic):
@@ -51,6 +73,24 @@ class MeanTensorStatistic(TensorStatistic):
         if isinstance(other, MeanTensorStatistic):
             return self.shape == other.shape and fns.allclose(self.mean_values, other.mean_values)
         return False
+
+    def get_dumped_data(self, target_node_info):
+        return {
+            "type": "MinMaxTensorStatistic",
+            "target_node_info": target_node_info,
+            "mean_values": np.array(self.mean_values.data),
+            "shape": np.array(self.shape),
+        }
+
+    def dump(self, stat_filename, target_node_info):
+        data = {
+            "type": "MinMaxTensorStatistic",
+            "target_node_info": target_node_info,
+            "mean_values": np.array(self.mean_values.data),
+            "shape": np.array(self.shape),
+        }
+        with open(stat_filename, "wb") as f:
+            pickle.dump(data, f)
 
 
 @dataclass
