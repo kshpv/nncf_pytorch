@@ -11,6 +11,7 @@
 """
 Structures and functions for passing advanced parameters to NNCF post-training quantization APIs.
 """
+
 import sys
 from dataclasses import dataclass
 from dataclasses import field
@@ -351,6 +352,7 @@ class AdvancedCompressionParameters:
     :type awq_params: AdvancedAWQParameters
     :param scale_estimation_params: Advanced parameters for scale estimation algorithm.
     :type scale_estimation_params: AdvancedScaleEstimationParameters
+    #TODO: add param
     """
 
     # Advanced AWQ algorithm parameters
@@ -366,6 +368,8 @@ class AdvancedCompressionParameters:
 
     # Advanced Lora Correction algorithm parameters
     lora_correction_params: AdvancedLoraCorrectionParameters = field(default_factory=AdvancedLoraCorrectionParameters)
+    # To load statistics from file
+    statistics_file_path: str
 
 
 @api()

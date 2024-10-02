@@ -11,6 +11,7 @@
 import operator
 from collections import defaultdict
 from functools import reduce
+from pathlib import Path
 from typing import Dict, List, Optional, OrderedDict, Tuple, TypeVar
 
 import nncf
@@ -69,6 +70,7 @@ class WeightCompression(Algorithm):
         scale_estimation: bool,
         gptq: bool,
         lora_correction: bool,
+        statistics_file_path: str,
         advanced_parameters: Optional[AdvancedCompressionParameters] = None,
     ):
         """
@@ -110,7 +112,7 @@ class WeightCompression(Algorithm):
         self._ratio = ratio
         self._ignored_scope = ignored_scope
         self._backend_entity = None
-        self._algorithm_key = f"CW_{hash(self)}"
+        self._algorithm_key = "WeightCompression"  # TODO: add renaming for all algos
         self._fp_inputs = defaultdict(list)
         self._all_layers = all_layers
         self._sensitivity_metric = sensitivity_metric
@@ -122,7 +124,7 @@ class WeightCompression(Algorithm):
         self._advanced_parameters = (
             advanced_parameters if advanced_parameters is not None else AdvancedCompressionParameters()
         )
-
+        self._statistics_file_path = self._advanced_parameters.statistics_file_path
         if self._gptq:
             gptq_params = self._advanced_parameters.gptq_params
             self._gptq_algo = GPTQ(
@@ -311,10 +313,22 @@ class WeightCompression(Algorithm):
     ) -> TModel:
         self._set_backend_entity(model)
         nodes_to_compress = self._get_nodes_to_compress(graph)
-
         activations = {}
         if dataset is not None and self._sensitivity_metric != SensitivityMetric.WEIGHT_QUANTIZATION_ERROR:
-            activations = self._get_activations(dataset, self._subset_size, nodes_to_compress, graph, model)
+            statistic_container, _collected_stat_inputs_map, act_vs_shared_node_names_mapping = (
+                self._get_statistics_points(model, self._subset_size, nodes_to_compress, graph)
+            )
+            if Path(self._statistics_file_path).exists():
+                statistic_container.load_statistics_from_file(self._statistics_file_path)
+            else:
+                statistics_aggregator = StatisticsAggregatorFactory.create(model, dataset)
+                statistics_aggregator.register_statistic_points(statistic_container)
+                statistics_aggregator.collect_statistics(model, graph)
+                if self._statistics_file_path:
+                    statistic_container.dump_statistics(self._statistics_file_path)
+            activations = self._get_activations(
+                statistic_container, _collected_stat_inputs_map, act_vs_shared_node_names_mapping
+            )
         all_weight_params: List[WeightCompressionParameters] = []
         weight_names = set()
 
@@ -531,21 +545,9 @@ class WeightCompression(Algorithm):
 
         return res
 
-    def _get_activations(
-        self, dataset: Dataset, subset_size: int, nodes_to_compress: List[NNCFNode], graph: NNCFGraph, model: TModel
-    ) -> Dict[str, List[Tensor]]:
-        """
-        Collects input activations for the given nodes on the dataset.
-
-        :param dataset: Dataset to collect values.
-        :param subset_size: Number of data samples to calculate activation statistics used for assigning different
-            quantization precision.
-        :param nodes_to_compress: List of nodes, whose inputs are collected.
-        :param model: Model for statistics collection.
-        :param graph: Model graph.
-        :return: statistics values itself per node name.
-        """
-        activations = {}
+    def _get_statistics_points(
+        self, model: TModel, subset_size: int, nodes_to_compress: List[NNCFNode], graph: NNCFGraph
+    ):
         _collected_stat_inputs_map = {}
         statistic_container = StatisticPointsContainer()
         all_act_nodes = set()
@@ -572,16 +574,19 @@ class WeightCompression(Algorithm):
                 )
             )
 
-        statistics_aggregator = StatisticsAggregatorFactory.create(model, dataset)
-        statistics_aggregator.register_statistic_points(statistic_container)
-
-        if self._gptq and not self._awq:
+        if self._gptq and not self._awq:  # TO CHECK
             self._gptq_statistics = self._gptq_algo.get_statistic_points(
                 model, graph, nodes_to_compress, self._backend_entity
             )
-            statistics_aggregator.register_statistic_points(self._gptq_statistics)
+            for statistic in self._gptq_statistics:
+                statistic_container.add_statistic_point(statistic)
+        return statistic_container, _collected_stat_inputs_map, act_vs_shared_node_names_mapping
 
-        statistics_aggregator.collect_statistics(model, graph)
+    def _get_activations(
+        self, statistic_container, _collected_stat_inputs_map, act_vs_shared_node_names_mapping
+    ) -> Dict[str, List[Tensor]]:
+        """ """
+        activations = {}
 
         for node_name, output_id in _collected_stat_inputs_map.items():
             act_node_name, output_port_id = output_id
