@@ -11,12 +11,9 @@
 
 from __future__ import annotations
 
-import pickle
 from collections import Counter
 from dataclasses import dataclass
 from typing import ClassVar, Dict, Tuple
-
-import numpy as np
 
 from nncf.tensor import Tensor
 from nncf.tensor import functions as fns
@@ -41,34 +38,12 @@ class MinMaxTensorStatistic(TensorStatistic):
             return fns.allclose(self.min_values, other.min_values) and fns.allclose(self.max_values, other.max_values)
         return False
 
-    def get_statistic_info(self, target_node_info):
-        return {"type": "MinMaxTensorStatistic", "target_node_info": target_node_info}
-
-    def get_dumped_data(self, target_node_info):
-        return {
-            "type": "MinMaxTensorStatistic",
-            "target_node_info": target_node_info,
-            "min_values": np.array(self.min_values.data),
-            "max_values": np.array(self.max_values.data),
-        }
-
-    def load_dumped_data(self, data):
-        self.load_data(data["min_values"], data["max_values"])
+    def get_data(self):
+        return self.min_values.data, self.max_values.data
 
     def load_data(self, min_values, max_values):
-        self.min_values = Tensor(min_values)
-        self.max_values = Tensor(max_values)
-
-    def dump(self, stat_filename, target_node_info):
-        data = {
-            "type": "MinMaxTensorStatistic",
-            "target_node_info": target_node_info,
-            "min_values": np.array(self.min_values.data),
-            "max_values": np.array(self.max_values.data),
-        }
-        with open(stat_filename, "wb") as f:
-            pickle.dump(data, f)
-        # np.savez(stat_filename, min_values=np.array(self.min_values.data), max_values=np.array(self.max_values.data))
+        self.min_values = min_values
+        self.max_values = max_values
 
 
 @dataclass
@@ -84,33 +59,12 @@ class MeanTensorStatistic(TensorStatistic):
             return self.shape == other.shape and fns.allclose(self.mean_values, other.mean_values)
         return False
 
-    def get_dumped_data(self, target_node_info):
-        return {
-            "type": "MinMaxTensorStatistic",
-            "target_node_info": target_node_info,
-            "mean_values": np.array(self.mean_values.data),
-            "shape": np.array(self.shape),
-        }
-
-    def get_statistic_info(self, target_node_info):
-        return {"type": "MinMaxTensorStatistic", "target_node_info": target_node_info}
-
-    def load_dumped_data(self, data):
-        self.load_data(data["mean_values"], data["shape"])
+    def get_data(self):
+        return self.mean_values, self.shape
 
     def load_data(self, mean_values, shape):
-        self.mean_values = Tensor(mean_values)
-        self.shape = tuple(shape)
-
-    def dump(self, stat_filename, target_node_info):
-        data = {
-            "type": "MinMaxTensorStatistic",
-            "target_node_info": target_node_info,
-            "mean_values": np.array(self.mean_values.data),
-            "shape": np.array(self.shape),
-        }
-        with open(stat_filename, "wb") as f:
-            pickle.dump(data, f)
+        self.mean_values = mean_values
+        self.shape = shape
 
 
 @dataclass
@@ -127,6 +81,13 @@ class MedianMADTensorStatistic(TensorStatistic):
                 self.mad_values, other.mad_values
             )
         return False
+
+    def get_data(self):
+        return self.median_values, self.mad_values
+
+    def load_data(self, median_values, mad_values):
+        self.median_values = median_values
+        self.mad_values = mad_values
 
 
 @dataclass
@@ -145,6 +106,12 @@ class PercentileTensorStatistic(TensorStatistic):
             return True
         return False
 
+    def get_data(self):
+        return self.percentile_vs_values_dict
+
+    def load_data(self, percentile_vs_values_dict):
+        self.percentile_vs_values_dict = percentile_vs_values_dict
+
 
 @dataclass
 class RawTensorStatistic(TensorStatistic):
@@ -156,3 +123,9 @@ class RawTensorStatistic(TensorStatistic):
         if isinstance(other, PercentileTensorStatistic):
             return fns.allclose(self.values, other.values)
         return False
+
+    def get_data(self):
+        return self.values
+
+    def load_data(self, values):
+        self.values = values

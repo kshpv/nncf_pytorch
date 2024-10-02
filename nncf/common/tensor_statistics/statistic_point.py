@@ -11,9 +11,10 @@
 
 import pickle
 from collections import UserDict
-from typing import Any, Callable, Generator, Optional, Tuple, cast
+from typing import Any, Callable, Generator, Tuple, cast
 
 from nncf.common.graph.transformations.commands import TargetPoint
+from nncf.common.logging.logger import nncf_logger
 from nncf.common.tensor import NNCFTensor
 from nncf.common.tensor_statistics.collectors import TensorStatisticCollectorBase
 
@@ -87,9 +88,7 @@ class StatisticPointsContainer(UserDict):  # type: ignore
             if filter_fn(_statistic_point):
                 yield _statistic_point
 
-    def get_tensor_collectors(
-        self, filter_fn: Optional[Callable[[StatisticPoint], bool]] = None
-    ) -> Generator[Tuple[str, StatisticPoint, TensorStatisticCollectorBase], None, None]:
+    def get_tensor_collectors(self) -> Generator[Tuple[str, StatisticPoint, TensorStatisticCollectorBase], None, None]:
         """
         Returns iterable through all tensor collectors.
 
@@ -98,15 +97,8 @@ class StatisticPointsContainer(UserDict):  # type: ignore
         :return: Iterable through all tensor collectors in form of tuple of algorithm description,
             correspondent statistic point and tensor collector.
         """
-        if filter_fn is None:
-
-            def default_filter_fn(stat_point: StatisticPoint) -> bool:
-                return True
-
-            filter_fn = default_filter_fn
-
-        for target_node_name in self.data:
-            for statistic_point in self.iter_through_statistic_points_in_target_node(target_node_name, filter_fn):
+        for statistic_points in self.data.values():
+            for statistic_point in statistic_points:
                 for algorithm, tensor_collectors in statistic_point.algorithm_to_tensor_collectors.items():
                     for tensor_collector in tensor_collectors:
                         yield algorithm, statistic_point, tensor_collector
@@ -127,40 +119,36 @@ class StatisticPointsContainer(UserDict):  # type: ignore
             for _tensor_collector in _statistic_point.algorithm_to_tensor_collectors[algorithm]:
                 yield _tensor_collector
 
-    def dump_statistics(self, dir):
-        data_to_dump = []
-
-        stat_filename = "statistics.pkl"
+    def dump_statistics(self, file_name: str) -> None:
+        data_to_dump = {}
         for algorithm, statistic_point, tensor_collector in self.get_tensor_collectors():
-            tp = statistic_point.target_point
-            tp_info = f"{tp.target_node_name}_{tp.type}_{tp.port_id}"
             statistics = tensor_collector.get_statistics()
-            data = statistics.get_dumped_data(tp_info)
-            data_to_dump.append(data)
-        with open(stat_filename, "wb") as f:
-            pickle.dump(data_to_dump, f)
+            statistics_key = get_statistics_key(statistics, algorithm, statistic_point.target_point)
+            data = statistics.get_data()
+            data_to_dump[statistics_key] = data
+        try:
+            with open(file_name, "wb") as f:
+                pickle.dump(data_to_dump, f)
+        except Exception as e:
+            nncf_logger.error(f"Failed to dump statistics to file {file_name} with error {e}")
 
-    def load_statistics_from_file(self, filename):
-        with open(filename, "rb") as f:
-            data = pickle.load(f)
+    def load_statistics_from_file(self, file_name: str) -> None:
+        try:
+            with open(file_name, "rb") as f:
+                dumped_data = pickle.load(f)
+        except Exception as e:
+            nncf_logger.error(f"Failed to open a file {file_name} with error {e}")
+            raise Exception  # TODO: ???
+        for algorithm, statistic_point, tensor_collector in self.get_tensor_collectors():
+            statistics = tensor_collector.get_statistics()
+            statistics_key = get_statistics_key(statistics, algorithm, statistic_point.target_point)
+            if statistics_key not in dumped_data:
+                raise ValueError("Not found statistics for ...")
+            statistics = tensor_collector.get_statistics()
+            statistics.load_data(dumped_data[statistics_key])
+            tensor_collector.is_built = True  # Do not like this. How to avoid it?
 
-        for stat_data in data:  # TODO: optimize to have 1 cycle
-            is_loaded = False
-            for algorithm, statistic_point, tensor_collector in self.get_tensor_collectors():
-                tp = statistic_point.target_point
-                tp_info = f"{tp.target_node_name}_{tp.type}_{tp.port_id}"
-                statistics = tensor_collector.get_statistics()
-                dumped_data = statistics.get_statistic_info(tp_info)
-                is_same_type = stat_data["type"] == dumped_data["type"]
-                is_same_tp = stat_data["target_node_info"] == dumped_data["target_node_info"]
-                if is_same_type and is_same_tp:
-                    statistics.load_dumped_data(stat_data)
-                    is_loaded = True
-                    break
-                tensor_collector.is_built = True
-            assert is_loaded
-        return
 
-    # def get_statistics(self):
-    #     for algorithm, statistic_point, tensor_collector in self.get_tensor_collectors():
-    #         statistic_point.target_point tensor_collector.get_statistics()
+def get_statistics_key(statistics, algorithm, target_point):
+    target_point_id = f"{algorithm}_{target_point.target_node_name}_{target_point.type}_{target_point.port_id}"
+    return statistics.__class__.__name__ + target_point_id
