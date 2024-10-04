@@ -121,9 +121,9 @@ class StatisticPointsContainer(UserDict):  # type: ignore
 
     def dump_statistics(self, file_name: str) -> None:
         data_to_dump = {}
-        for algorithm, statistic_point, tensor_collector in self.get_tensor_collectors():
+        for _, statistic_point, tensor_collector in self.get_tensor_collectors():
             statistics = tensor_collector.get_statistics()
-            statistics_key = get_statistics_key(statistics, algorithm, statistic_point.target_point)
+            statistics_key = get_statistics_key(statistics, statistic_point.target_point)
             data = statistics.get_data()
             data_to_dump[statistics_key] = data
         try:
@@ -139,9 +139,9 @@ class StatisticPointsContainer(UserDict):  # type: ignore
         except Exception as e:
             nncf_logger.error(f"Failed to open a file {file_name} with error {e}")
             raise Exception  # TODO: ???
-        for algorithm, statistic_point, tensor_collector in self.get_tensor_collectors():
+        for _, statistic_point, tensor_collector in self.get_tensor_collectors():
             statistics = tensor_collector.get_statistics()
-            statistics_key = get_statistics_key(statistics, algorithm, statistic_point.target_point)
+            statistics_key = get_statistics_key(statistics, statistic_point.target_point)
             if statistics_key not in dumped_data:
                 raise ValueError("Not found statistics for ...")
             statistics = tensor_collector.get_statistics()
@@ -149,6 +149,6 @@ class StatisticPointsContainer(UserDict):  # type: ignore
             tensor_collector.is_built = True  # Do not like this. How to avoid it?
 
 
-def get_statistics_key(statistics, algorithm, target_point):
-    target_point_id = f"{algorithm}_{target_point.target_node_name}_{target_point.type}_{target_point.port_id}"
+def get_statistics_key(statistics, target_point):
+    target_point_id = f"{target_point.target_node_name}_{target_point.type}_{target_point.port_id}"
     return statistics.__class__.__name__ + target_point_id

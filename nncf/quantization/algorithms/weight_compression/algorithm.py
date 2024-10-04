@@ -70,7 +70,6 @@ class WeightCompression(Algorithm):
         scale_estimation: bool,
         gptq: bool,
         lora_correction: bool,
-        statistics_file_path: str,
         advanced_parameters: Optional[AdvancedCompressionParameters] = None,
     ):
         """
@@ -112,7 +111,7 @@ class WeightCompression(Algorithm):
         self._ratio = ratio
         self._ignored_scope = ignored_scope
         self._backend_entity = None
-        self._algorithm_key = "WeightCompression"  # TODO: add renaming for all algos
+        self._algorithm_key = f"CW_{hash(self)}"
         self._fp_inputs = defaultdict(list)
         self._all_layers = all_layers
         self._sensitivity_metric = sensitivity_metric
