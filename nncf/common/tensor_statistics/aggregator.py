@@ -8,6 +8,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import pickle
 from abc import ABC
 from abc import abstractmethod
 from itertools import islice
@@ -17,6 +18,7 @@ import nncf
 from nncf.common import factory
 from nncf.common.graph.graph import NNCFGraph
 from nncf.common.graph.transformations.layout import TransformationLayout
+from nncf.common.logging.logger import nncf_logger
 from nncf.common.logging.track_progress import track
 from nncf.common.tensor import NNCFTensor
 from nncf.common.tensor_statistics.statistic_point import StatisticPointsContainer
@@ -82,6 +84,35 @@ class StatisticsAggregator(ABC):
             empty_statistics = False
         if empty_statistics:
             raise nncf.ValidationError(EMPTY_DATASET_ERROR)
+
+    def load_statistics_from_file(self, file_name: str) -> None:
+        try:
+            with open(file_name, "rb") as f:
+                dumped_data = pickle.load(f)
+        except Exception as e:
+            nncf_logger.error(f"Failed to open a file {file_name} with error {e}")
+            raise Exception  # TODO: ???
+        for _, statistic_point, tensor_collector in self.statistic_points.get_tensor_collectors():
+            statistics = tensor_collector.get_statistics()
+            statistics_key = get_statistics_key(statistics, statistic_point.target_point)
+            if statistics_key not in dumped_data:
+                raise ValueError("Not found statistics for ...")
+            statistics = tensor_collector.get_statistics()
+            statistics.load_data(dumped_data[statistics_key])
+            tensor_collector.is_built = True  # Do not like this. How to avoid it?
+
+    def dump_statistics(self, file_name: str) -> None:
+        data_to_dump = {}
+        for _, statistic_point, tensor_collector in self.statistic_points.get_tensor_collectors():
+            statistics = tensor_collector.get_statistics()
+            statistics_key = get_statistics_key(statistics, statistic_point.target_point)
+            data = statistics.get_data()
+            data_to_dump[statistics_key] = data
+        try:
+            with open(file_name, "wb") as f:
+                pickle.dump(data_to_dump, f)
+        except Exception as e:
+            nncf_logger.error(f"Failed to dump statistics to file {file_name} with error {e}")
 
     def register_statistic_points(self, statistic_points: StatisticPointsContainer) -> None:
         """
@@ -149,3 +180,8 @@ class StatisticsAggregator(ABC):
         :param outputs: raw model outputs
         :return: processed model outputs in Dict[str, Tensor] format
         """
+
+
+def get_statistics_key(statistics, target_point):
+    target_point_id = f"{target_point.target_node_name}_{target_point.type}_{target_point.port_id}"
+    return statistics.__class__.__name__ + target_point_id

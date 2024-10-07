@@ -22,6 +22,8 @@ from nncf.experimental.common.tensor_statistics.collectors import MeanAggregator
 from nncf.experimental.common.tensor_statistics.collectors import NoopAggregator
 from nncf.experimental.common.tensor_statistics.collectors import ShapeReducer
 from nncf.experimental.common.tensor_statistics.collectors import TensorCollector
+from nncf.experimental.common.tensor_statistics.statistics import HessianTensorStatistic
+from nncf.experimental.common.tensor_statistics.statistics import MeanTensorStatistic
 from nncf.openvino.graph.metatypes import openvino_metatypes as om
 from nncf.openvino.graph.metatypes.groups import ATOMIC_ACTIVATIONS_OPERATIONS
 from nncf.openvino.graph.model_transformer import OVModelTransformer
@@ -92,9 +94,9 @@ class OVWeightCompressionAlgoBackend(WeightCompressionAlgoBackend):
     ) -> TensorCollector:
         mean_reducer = OVMeanReducer(reduction_axes, inplace=True)
         shape_reducer = ShapeReducer()
-        collector = TensorCollector()
-        collector.register_statistic_branch(self.MEAN_STAT, mean_reducer, NoopAggregator(subset_size))
-        collector.register_statistic_branch(self.SHAPE_STAT, shape_reducer, NoopAggregator(subset_size))
+        collector = TensorCollector(MeanTensorStatistic)
+        collector.register_statistic_branch(MeanTensorStatistic.MEAN_STAT, mean_reducer, NoopAggregator(subset_size))
+        collector.register_statistic_branch(MeanTensorStatistic.SHAPE_STAT, shape_reducer, NoopAggregator(subset_size))
         return collector
 
     @staticmethod
@@ -429,6 +431,6 @@ class OVMixedPrecisionAlgoBackend(OVWeightCompressionAlgoBackend):
     def mean_square_statistic_collector(subset_size: Optional[int] = None) -> TensorCollector:
         reducer = OVMeanSquareReducer(inplace=True)
         aggregator = MeanAggregator(num_samples=subset_size)
-        collector = TensorCollector()
-        collector.register_statistic_branch(SensitivityMetric.HESSIAN_INPUT_ACTIVATION.value, reducer, aggregator)
+        collector = TensorCollector(HessianTensorStatistic)
+        collector.register_statistic_branch(HessianTensorStatistic.HESSIAN_INPUT_ACTIVATION_STATS, reducer, aggregator)
         return collector

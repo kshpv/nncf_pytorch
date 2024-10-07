@@ -356,7 +356,7 @@ class AdvancedCompressionParameters:
     """
 
     # To load statistics from file
-    statistics_file_path: str
+    statistics_file_path: Optional[str] = None
     # Advanced AWQ algorithm parameters
     awq_params: AdvancedAWQParameters = field(default_factory=AdvancedAWQParameters)
 

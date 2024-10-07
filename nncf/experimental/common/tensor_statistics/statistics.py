@@ -129,3 +129,21 @@ class RawTensorStatistic(TensorStatistic):
 
     def load_data(self, values):
         self.values = values
+
+
+@dataclass
+class HessianTensorStatistic(TensorStatistic):
+    HESSIAN_INPUT_ACTIVATION_STATS: ClassVar[str] = "HESSIAN_INPUT_ACTIVATION"
+
+    values: Tensor
+
+    def __eq__(self, other: TensorStatistic) -> bool:
+        if isinstance(other, HessianTensorStatistic):
+            return fns.allclose(self.values, other.values)
+        return False
+
+    def get_data(self):
+        return self.values
+
+    def load_data(self, values):
+        self.values = values

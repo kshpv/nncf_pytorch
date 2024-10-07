@@ -20,6 +20,7 @@ import nncf.tensor.functions as fns
 from nncf.common.tensor import TensorType
 from nncf.common.tensor_statistics.collectors import ReductionAxes
 from nncf.experimental.common.tensor_statistics.statistical_functions import mean_per_channel
+from nncf.experimental.common.tensor_statistics.statistics import HessianTensorStatistic
 from nncf.experimental.common.tensor_statistics.statistics import MeanTensorStatistic
 from nncf.experimental.common.tensor_statistics.statistics import MedianMADTensorStatistic
 from nncf.experimental.common.tensor_statistics.statistics import MinMaxTensorStatistic
@@ -331,8 +332,6 @@ class TensorCollector:
         for container_key, branch_key in self._stat_container_kwargs_map.items():
             kwargs[container_key] = aggregated_values[branch_key]
 
-        if not self._stat_container:
-            return kwargs
         self.statistics = self._build_statistic_container(self._stat_container, kwargs)
         self.is_built = True
         return self.statistics
@@ -422,6 +421,8 @@ class TensorCollector:
                 for (_, percentile), value in kwargs.items():
                     percentile_vs_values_dict[percentile] = value
             return statistic_container_cls(percentile_vs_values_dict=percentile_vs_values_dict)
+        if issubclass(statistic_container_cls, HessianTensorStatistic):
+            return statistic_container_cls(values=kwargs[HessianTensorStatistic.HESSIAN_INPUT_ACTIVATION_STATS])
         raise nncf.InternalError(
             f"Statistic collector class {statistic_container_cls} is not supported by the TensorCollector class."
         )
