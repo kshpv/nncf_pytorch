@@ -355,6 +355,8 @@ class AdvancedCompressionParameters:
     #TODO: add param
     """
 
+    # To load statistics from file
+    statistics_file_path: str
     # Advanced AWQ algorithm parameters
     awq_params: AdvancedAWQParameters = field(default_factory=AdvancedAWQParameters)
 
@@ -368,8 +370,6 @@ class AdvancedCompressionParameters:
 
     # Advanced Lora Correction algorithm parameters
     lora_correction_params: AdvancedLoraCorrectionParameters = field(default_factory=AdvancedLoraCorrectionParameters)
-    # To load statistics from file
-    statistics_file_path: str
 
 
 @api()
