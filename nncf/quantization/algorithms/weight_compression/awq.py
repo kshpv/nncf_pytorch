@@ -24,11 +24,15 @@ from nncf.common.logging.track_progress import track
 from nncf.common.tensor_statistics.statistic_point import StatisticPointsContainer
 from nncf.common.utils.backend import BackendType
 from nncf.common.utils.backend import get_backend
+from nncf.parameters import CompressWeightsMode
 from nncf.quantization.algorithms.algorithm import Algorithm
 from nncf.quantization.algorithms.weight_compression.activation_stats import process_stats
 from nncf.quantization.algorithms.weight_compression.config import WeightCompressionParameters
+from nncf.quantization.algorithms.weight_compression.weight_lowering import calculate_nf4_scale
 from nncf.quantization.algorithms.weight_compression.weight_lowering import do_int_dequantization
 from nncf.quantization.algorithms.weight_compression.weight_lowering import do_int_quantization
+from nncf.quantization.algorithms.weight_compression.weight_lowering import do_nf4_dequantization
+from nncf.quantization.algorithms.weight_compression.weight_lowering import do_nf4_quantization
 from nncf.quantization.passes import transform_to_inference_graph
 from nncf.tensor import functions as fns
 
@@ -59,7 +63,7 @@ class AWQ(Algorithm):
         name_to_node_mapping: Dict[str, Any],
         all_weight_params: List[WeightCompressionParameters],
         nodes_to_compress: List[NNCFNode],
-        activations: Optional[Dict[str, TTensor]] = None,
+        statistics=None,
         subset_size: int = 32,
         percent_to_apply=0.002,
         alpha_min=0.0,
@@ -82,7 +86,7 @@ class AWQ(Algorithm):
         self.name_to_node_mapping = name_to_node_mapping
         self._all_weight_params = all_weight_params
         self._nodes_to_compress = nodes_to_compress
-        self._activations = activations
+        self._statistics = statistics
         self._subset_size = subset_size
         self._percent_to_apply = percent_to_apply
         self._alpha_min = alpha_min
@@ -90,6 +94,7 @@ class AWQ(Algorithm):
         self._steps = steps
         self._backend_entity = None
         self._patterns = None
+        self._scale_per_target_node = {}
 
         self._set_backend_entity(model)
 
@@ -195,7 +200,7 @@ class AWQ(Algorithm):
 
             config = wp.compression_config
 
-            s, X = process_stats(self._activations[k], self._subset_size)
+            s, X = process_stats(self._statistics[k], self._subset_size)
 
             top_k = max(int(s.shape[0] * self._percent_to_apply), 1)
             topk_idxs = fns.argsort(-s)[:top_k]
@@ -244,11 +249,16 @@ class AWQ(Algorithm):
                 alpha = self._alpha_min
                 for _ in range(self._steps):
                     cur_scale = gscale**alpha
-
-                    g_compressed_weighs, g_c_scale, g_c_zp = do_int_quantization(
-                        gweight * cur_scale, reduction_axis, awq_config
-                    )
-                    g_decompressed_weighs = do_int_dequantization(g_compressed_weighs, g_c_scale, g_c_zp)
+                    weights_to_fake_quantize = gweight * cur_scale
+                    if config.mode == CompressWeightsMode.NF4:
+                        g_c_scale = calculate_nf4_scale(weights_to_fake_quantize, reduction_axis)
+                        g_compressed_weighs = do_nf4_quantization(weights_to_fake_quantize, g_c_scale)
+                        g_decompressed_weighs = do_nf4_dequantization(g_compressed_weighs, g_c_scale)
+                    else:
+                        g_compressed_weighs, g_c_scale, g_c_zp = do_int_quantization(
+                            weights_to_fake_quantize, reduction_axis, awq_config
+                        )
+                        g_decompressed_weighs = do_int_dequantization(g_compressed_weighs, g_c_scale, g_c_zp)
                     sacts = gacts / fns.unsqueeze(cur_scale, 1)
 
                     cur_out = fns.matmul(g_decompressed_weighs, sacts)
@@ -290,14 +300,16 @@ class AWQ(Algorithm):
                 )
                 transformation_layout.register(scale_insertion_command)
 
-            # update activations for next usage
-            for i, stat in enumerate(self._activations[k]):
-                stat = stat * a_scale
-                self._activations[k][i] = stat
+            self._scale_per_target_node[k] = a_scale
 
         transformed_model = model_transformer.transform(transformation_layout)
 
         return transformed_model
+
+    def update_statistics(self, statistics):
+        for node_name, scale in self._scale_per_target_node.items():
+            for mean_stat in statistics[node_name]["mean_values"]:
+                mean_stat *= fns.squeeze(scale)
 
     def get_statistic_points(self, model: TModel, graph: NNCFGraph) -> StatisticPointsContainer:
         """

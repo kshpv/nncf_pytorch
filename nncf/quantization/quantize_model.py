@@ -490,17 +490,38 @@ def compress_weights(
         dataset = None
         compression_weights_impl = pt_compression_weights_impl
 
+    if backend == BackendType.TORCH_FX:
+        from nncf.experimental.torch.fx.quantization.quantize_model import (
+            compress_weights_impl as fx_compression_weights_impl,
+        )
+
+        if mode not in [CompressWeightsMode.INT8_ASYM, CompressWeightsMode.INT8_SYM]:
+            raise AttributeError(
+                "TorchFX backend supports only INT8_ASYM, INT8_SYM modes for weight compression, "
+                f"but given {mode.value} mode."
+            )
+
+        if any((awq, scale_estimation, gptq, lora_correction)):
+            raise AttributeError(
+                "TorchFX backend does not support 'awq', 'scale_estimation', 'gptq',"
+                "and 'lora_correction' options. Set them to None."
+            )
+        if dataset:
+            raise AttributeError(
+                "TorchFX only supports data-free weights compression," "Set the 'dataset' option to None"
+            )
+        compression_weights_impl = fx_compression_weights_impl
+
     if backend == BackendType.OPENVINO:
         from nncf.openvino.quantization.quantize_model import compress_weights_impl as ov_compress_weights_impl
 
-        if any((awq, scale_estimation)) and (
-            dataset is None or mode in [CompressWeightsMode.NF4, CompressWeightsMode.E2M1]
+        if any((awq, scale_estimation, gptq, lora_correction)) and (
+            dataset is None or mode == CompressWeightsMode.E2M1
         ):
             raise AttributeError(
-                "Scale estimation or AWQ algorithm is defined, but dataset is None or mode is (NF4 or E2M1)."
+                "Scale estimation, AWQ, GPTQ or Lora Correction algorithm is defined, "
+                "but dataset is None or mode is E2M1."
             )
-        if any((gptq, lora_correction)) and (dataset is None or mode == CompressWeightsMode.E2M1):
-            raise AttributeError("GPTQ or Lora Correction algorithm is defined, but dataset is None or mode is E2M1.")
 
         if gptq and lora_correction:
             raise AttributeError(

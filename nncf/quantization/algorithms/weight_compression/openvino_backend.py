@@ -18,6 +18,9 @@ from nncf.common.graph import NNCFNode
 from nncf.common.graph.operator_metatypes import OperatorMetatype
 from nncf.common.graph.transformations.commands import TargetType
 from nncf.common.graph.utils import get_reduction_axes
+from nncf.experimental.common.tensor_statistics.collectors import MeanAggregator
+from nncf.experimental.common.tensor_statistics.collectors import NoopAggregator
+from nncf.experimental.common.tensor_statistics.collectors import ShapeReducer
 from nncf.experimental.common.tensor_statistics.collectors import TensorCollector
 from nncf.openvino.graph.metatypes import openvino_metatypes as om
 from nncf.openvino.graph.metatypes.groups import ATOMIC_ACTIVATIONS_OPERATIONS
@@ -27,8 +30,13 @@ from nncf.openvino.graph.node_utils import get_weight_channel_axes
 from nncf.openvino.graph.transformations.command_creation import OVCommandCreator
 from nncf.openvino.graph.transformations.commands import OVTargetPoint
 from nncf.openvino.rt_info import dump_parameters
-from nncf.openvino.statistics.collectors import get_raw_stat_collector
+from nncf.openvino.statistics.collectors import OVMaxVarianceReducer
+from nncf.openvino.statistics.collectors import OVMeanAbsMaxReducer
+from nncf.openvino.statistics.collectors import OVMeanReducer
+from nncf.openvino.statistics.collectors import OVMeanSquareReducer
+from nncf.openvino.statistics.collectors import OVMeanVarianceReducer
 from nncf.parameters import CompressWeightsMode
+from nncf.parameters import SensitivityMetric
 from nncf.quantization.algorithms.weight_compression.awq_patterns import get_awq_patterns
 from nncf.quantization.algorithms.weight_compression.backend import AWQAlgoBackend
 from nncf.quantization.algorithms.weight_compression.backend import WeightCompressionAlgoBackend
@@ -79,9 +87,15 @@ class OVWeightCompressionAlgoBackend(WeightCompressionAlgoBackend):
     def target_point(target_type: TargetType, target_node_name: str, port_id: int) -> OVTargetPoint:
         return OVTargetPoint(target_type, target_node_name, port_id)
 
-    @staticmethod
-    def raw_statistic_collector(num_samples: Optional[int] = None) -> TensorCollector:
-        return get_raw_stat_collector(num_samples)
+    def mean_statistic_collector(
+        self, reduction_axes: Tuple[int], subset_size: Optional[int] = None
+    ) -> TensorCollector:
+        mean_reducer = OVMeanReducer(reduction_axes, inplace=True)
+        shape_reducer = ShapeReducer()
+        collector = TensorCollector()
+        collector.register_statistic_branch(self.MEAN_STAT, mean_reducer, NoopAggregator(subset_size))
+        collector.register_statistic_branch(self.SHAPE_STAT, shape_reducer, NoopAggregator(subset_size))
+        return collector
 
     @staticmethod
     def get_activation_port_id(node: NNCFNode, nncf_graph: NNCFGraph) -> int:
@@ -337,7 +351,10 @@ class OVWeightCompressionAlgoBackend(WeightCompressionAlgoBackend):
     @staticmethod
     def get_compress_pipeline(config: WeightCompressionConfig, w_shape, s_shape, z_p_shape=None, return_nodes=False):
         mode = config.mode
-        assert mode in [CompressWeightsMode.INT4_SYM, CompressWeightsMode.INT4_ASYM]
+        assert mode in [
+            CompressWeightsMode.INT4_SYM,
+            CompressWeightsMode.INT4_ASYM,
+        ], f"Only int4 supported, but given={mode}"
         num_bits = config.num_bits
 
         asym_quant = mode in [CompressWeightsMode.INT4_ASYM]
@@ -375,3 +392,43 @@ class OVAWQAlgoAlgoBackend(AWQAlgoBackend, OVWeightCompressionAlgoBackend):
         return OVCommandCreator.multiply_insertion_command(
             source_node, next_nodes, source_node_output_port, scale, f"{source_node.node_name}/awq_mul"
         )
+
+
+class OVMixedPrecisionAlgoBackend(OVWeightCompressionAlgoBackend):
+    @staticmethod
+    def mean_variance_statistic_collector(
+        reduction_axes: Tuple[int], subset_size: Optional[int] = None
+    ) -> TensorCollector:
+        reducer = OVMeanVarianceReducer(reduction_axes, inplace=True)
+        aggregator = MeanAggregator(num_samples=subset_size)
+        collector = TensorCollector()
+        collector.register_statistic_branch(SensitivityMetric.MEAN_ACTIVATION_VARIANCE.value, reducer, aggregator)
+        return collector
+
+    @staticmethod
+    def max_variance_statistic_collector(
+        reduction_axes: Tuple[int], subset_size: Optional[int] = None
+    ) -> TensorCollector:
+        reducer = OVMaxVarianceReducer(reduction_axes, inplace=True)
+        aggregator = MeanAggregator(num_samples=subset_size)
+        collector = TensorCollector()
+        collector.register_statistic_branch(SensitivityMetric.MAX_ACTIVATION_VARIANCE.value, reducer, aggregator)
+        return collector
+
+    @staticmethod
+    def mean_abs_max_statistic_collector(
+        reduction_axes: Tuple[int], subset_size: Optional[int] = None
+    ) -> TensorCollector:
+        reducer = OVMeanAbsMaxReducer(reduction_axes, inplace=True)
+        aggregator = MeanAggregator(num_samples=subset_size)
+        collector = TensorCollector()
+        collector.register_statistic_branch(SensitivityMetric.MEAN_ACTIVATION_MAGNITUDE.value, reducer, aggregator)
+        return collector
+
+    @staticmethod
+    def mean_square_statistic_collector(subset_size: Optional[int] = None) -> TensorCollector:
+        reducer = OVMeanSquareReducer(inplace=True)
+        aggregator = MeanAggregator(num_samples=subset_size)
+        collector = TensorCollector()
+        collector.register_statistic_branch(SensitivityMetric.HESSIAN_INPUT_ACTIVATION.value, reducer, aggregator)
+        return collector

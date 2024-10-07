@@ -30,8 +30,12 @@ from nncf.experimental.common.tensor_statistics.statistics import MeanTensorStat
 from nncf.experimental.common.tensor_statistics.statistics import RawTensorStatistic
 from nncf.openvino.graph.node_utils import get_inplace_batch_mean_op
 from nncf.openvino.graph.node_utils import get_inplace_max_op
+from nncf.openvino.graph.node_utils import get_inplace_max_var_op
+from nncf.openvino.graph.node_utils import get_inplace_mean_max_op
 from nncf.openvino.graph.node_utils import get_inplace_mean_op
 from nncf.openvino.graph.node_utils import get_inplace_mean_per_ch
+from nncf.openvino.graph.node_utils import get_inplace_mean_square_op
+from nncf.openvino.graph.node_utils import get_inplace_mean_var_op
 from nncf.openvino.graph.node_utils import get_inplace_min_op
 from nncf.quantization.advanced_parameters import StatisticsType
 
@@ -58,6 +62,30 @@ class OVMeanReducer(MeanReducer):
 
     def get_inplace_fn(self):
         return get_inplace_mean_op(self._reduction_axes)
+
+
+class OVMeanVarianceReducer(MeanReducer):
+
+    def get_inplace_fn(self):
+        return get_inplace_mean_var_op(self._reduction_axes)
+
+
+class OVMaxVarianceReducer(MeanReducer):
+
+    def get_inplace_fn(self):
+        return get_inplace_max_var_op(self._reduction_axes)
+
+
+class OVMeanAbsMaxReducer(MeanReducer):
+
+    def get_inplace_fn(self):
+        return get_inplace_mean_max_op(True, self._reduction_axes)
+
+
+class OVMeanSquareReducer(MeanReducer):
+
+    def get_inplace_fn(self):
+        return get_inplace_mean_square_op(self._reduction_axes)
 
 
 class OVBatchMeanReducer(BatchMeanReducer):

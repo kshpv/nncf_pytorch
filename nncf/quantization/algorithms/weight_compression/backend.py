@@ -27,6 +27,9 @@ TModel = TypeVar("TModel")
 
 
 class WeightCompressionAlgoBackend(ABC):
+    MEAN_STAT = "mean_values"
+    SHAPE_STAT = "shape_values"
+
     @property
     @abstractmethod
     def matmul_metatypes(self) -> List[OperatorMetatype]:
@@ -194,16 +197,11 @@ class WeightCompressionAlgoBackend(ABC):
         :return: Backend-specific TargetPoint.
         """
 
-    @staticmethod
     @abstractmethod
-    def raw_statistic_collector(num_samples: Optional[int] = None) -> TensorStatisticCollectorBase:
-        """
-        Returns backend-specific raw statistic collector.
-        This statistic collector is used for raw data calculation, without aggregating.
-
-        :param num_samples: Maximum number of samples to collect.
-        :return: Backend-specific TensorStatisticCollectorBase for the statistics calculation.
-        """
+    def mean_statistic_collector(
+        self, reduction_axes: Tuple[int], subset_size: Optional[int] = None
+    ) -> TensorStatisticCollectorBase:
+        """ """
 
     @staticmethod
     @abstractmethod
