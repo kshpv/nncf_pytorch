@@ -14,6 +14,7 @@ from collections import OrderedDict
 from collections import defaultdict
 from functools import partial
 from functools import reduce
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple, TypeVar
 
 import nncf
@@ -516,8 +517,19 @@ class WeightCompression(Algorithm):
         if self._gptq:
             self._gptq_statistics = self._gptq_algo.get_statistic_points(model, graph, nodes)
             statistics_aggregator.register_statistic_points(self._gptq_statistics)
-
-        statistics_aggregator.collect_statistics(model, graph)
+        if not self._statistics_file_path:
+            statistics_aggregator.collect_statistics(model, graph)
+        elif Path(self._statistics_file_path).exists():
+            statistic_points_container = statistics_aggregator._get_merged_statistic_points(
+                statistics_aggregator.statistic_points, model, graph
+            )
+            statistic_points_container.load_statistics_from_file(self._statistics_file_path)
+        else:
+            statistic_points_container = statistics_aggregator._get_merged_statistic_points(
+                statistics_aggregator.statistic_points, model, graph
+            )
+            statistics_aggregator.collect_statistics(model, graph)
+            statistic_points_container.dump_statistics(self._statistics_file_path)
 
         if mean_statistic_points is not None:
             self._mean_statistics = self._get_mean_statistics(matmul_input_to_output_nodes_map, mean_statistic_points)
