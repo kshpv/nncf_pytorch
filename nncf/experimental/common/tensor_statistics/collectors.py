@@ -423,6 +423,9 @@ class TensorCollector:
             return statistic_container_cls(percentile_vs_values_dict=percentile_vs_values_dict)
         if issubclass(statistic_container_cls, HessianTensorStatistic):
             return statistic_container_cls(values=kwargs[HessianTensorStatistic.HESSIAN_INPUT_ACTIVATION_STATS])
+        # TODO: add all statistics
+        if issubclass(statistic_container_cls, HessianTensorStatistic):
+            return statistic_container_cls(values=kwargs[HessianTensorStatistic.HESSIAN_INPUT_ACTIVATION_STATS])
         raise nncf.InternalError(
             f"Statistic collector class {statistic_container_cls} is not supported by the TensorCollector class."
         )

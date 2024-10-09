@@ -132,13 +132,85 @@ class RawTensorStatistic(TensorStatistic):
 
 
 @dataclass
+class WeightQuantizationErrorTensorStatistic(TensorStatistic):
+    WEIGHT_QUANTIZATION_ERROR_STATS: ClassVar[str] = "weight_quantization_error"
+
+    values: Tensor
+
+    def __eq__(self, other: TensorStatistic) -> bool:
+        if isinstance(other, WeightQuantizationErrorTensorStatistic):
+            return fns.allclose(self.values, other.values)
+        return False
+
+    def get_data(self):
+        return self.values
+
+    def load_data(self, values):
+        self.values = values
+
+
+@dataclass
 class HessianTensorStatistic(TensorStatistic):
-    HESSIAN_INPUT_ACTIVATION_STATS: ClassVar[str] = "HESSIAN_INPUT_ACTIVATION"
+    HESSIAN_INPUT_ACTIVATION_STATS: ClassVar[str] = "hessian"
 
     values: Tensor
 
     def __eq__(self, other: TensorStatistic) -> bool:
         if isinstance(other, HessianTensorStatistic):
+            return fns.allclose(self.values, other.values)
+        return False
+
+    def get_data(self):
+        return self.values
+
+    def load_data(self, values):
+        self.values = values
+
+
+@dataclass
+class MeanVarianceTensorStatistic(TensorStatistic):
+    MEAN_VARIANCE_STAT: ClassVar[str] = "mean_variance"
+
+    values: Tensor
+
+    def __eq__(self, other: TensorStatistic) -> bool:
+        if isinstance(other, MeanVarianceTensorStatistic):
+            return fns.allclose(self.values, other.values)
+        return False
+
+    def get_data(self):
+        return self.values
+
+    def load_data(self, values):
+        self.values = values
+
+
+@dataclass
+class MaxVarianceTensorStatistic(TensorStatistic):
+    MAX_VARIANCE_STAT: ClassVar[str] = "max_variance"
+
+    values: Tensor
+
+    def __eq__(self, other: TensorStatistic) -> bool:
+        if isinstance(other, MaxVarianceTensorStatistic):
+            return fns.allclose(self.values, other.values)
+        return False
+
+    def get_data(self):
+        return self.values
+
+    def load_data(self, values):
+        self.values = values
+
+
+@dataclass
+class MeanMagnitudeTensorStatistic(TensorStatistic):
+    MEAN_MAGNITUDE_STAT: ClassVar[str] = "mean_magnitude"
+
+    values: Tensor
+
+    def __eq__(self, other: TensorStatistic) -> bool:
+        if isinstance(other, MeanMagnitudeTensorStatistic):
             return fns.allclose(self.values, other.values)
         return False
 
