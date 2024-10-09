@@ -19,6 +19,7 @@ from nncf.common.utils.debug import DEBUG_LOG_DIR
 from nncf.common.utils.debug import is_debug
 from nncf.parameters import CompressWeightsMode
 from nncf.quantization.advanced_parameters import AdvancedLoraCorrectionParameters
+from nncf.quantization.algorithms.weight_compression.activation_stats import WCStatistics
 from nncf.quantization.algorithms.weight_compression.activation_stats import process_stats
 from nncf.quantization.algorithms.weight_compression.config import WeightCompressionConfig
 from nncf.quantization.algorithms.weight_compression.config import WeightCompressionParameters
@@ -80,9 +81,9 @@ class LoraCorrectionAlgorithm:
     The method reduces quantization noise after weight compression using low rank adapters.
     """
 
-    def __init__(self, statistics: Dict[str, List[Tensor]], lora_correction_params: AdvancedLoraCorrectionParameters):
+    def __init__(self, statistics: Dict[str, WCStatistics], lora_correction_params: AdvancedLoraCorrectionParameters):
         """
-        :param activations: The input activations of the layers considered for compression.
+        :param statistics: Input activation statistics for each node.
         :param lora_correction_params: parameters to configure the algorithm.
         """
         self._statistics = statistics
@@ -134,7 +135,7 @@ class LoraCorrectionAlgorithm:
         compression_config: WeightCompressionConfig,
         reduction_axes: Tuple[int, ...],
         lora_correction_params: AdvancedLoraCorrectionParameters,
-        layer_statistics: List[Tensor],
+        layer_statistics: WCStatistics,
         is_debug: Optional[bool] = False,
     ):
         """
@@ -149,8 +150,7 @@ class LoraCorrectionAlgorithm:
         :param compression_config: configuration of weight compression for the weight node.
         :param reduction_axes: axes along which different statistics reduced.
         :param lora_correction_params: parameters to configure the algorithm.
-        :param layer_activations: list of activation statistics for a layer that contains
-            N tensors with shape [SeqLen, HiddenDim].
+        :param layer_statistics: an object containing statistics for the layer.
         :param is_debug: whether to collect debug information, defaults to False.
         :return: two low rank matrices in the order of execution of corresponding linear layers and list of mean noises.
             Noises are collected from each step of the algorithm if debug was enabled.

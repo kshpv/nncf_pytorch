@@ -31,11 +31,13 @@ from nncf.common.tensor_statistics.statistic_point import StatisticPointsContain
 from nncf.common.utils.backend import BackendType
 from nncf.common.utils.backend import get_backend
 from nncf.common.utils.helpers import create_table
+from nncf.parameters import BackupMode
 from nncf.parameters import CompressWeightsMode
 from nncf.parameters import SensitivityMetric
 from nncf.quantization.advanced_parameters import AdvancedCompressionParameters
 from nncf.quantization.advanced_parameters import convert_to_dict_recursively
 from nncf.quantization.algorithms.algorithm import Algorithm
+from nncf.quantization.algorithms.weight_compression.activation_stats import WCStatistics
 from nncf.quantization.algorithms.weight_compression.awq import AWQ
 from nncf.quantization.algorithms.weight_compression.config import WeightCompressionParameters
 from nncf.quantization.algorithms.weight_compression.gptq import GPTQ
@@ -45,7 +47,6 @@ from nncf.quantization.algorithms.weight_compression.scale_estimation import Sca
 from nncf.quantization.algorithms.weight_compression.weight_lowering import WeightCompressionConfig
 from nncf.scopes import IgnoredScope
 from nncf.scopes import get_ignored_node_names_from_ignored_scope
-from nncf.tensor.definitions import TensorDataType
 
 TModel = TypeVar("TModel")
 TTensor = TypeVar("TTensor")
@@ -72,6 +73,7 @@ class WeightCompression(Algorithm):
         scale_estimation: bool,
         gptq: bool,
         lora_correction: bool,
+        backup_mode: BackupMode = BackupMode.INT8_ASYM,
         advanced_parameters: Optional[AdvancedCompressionParameters] = None,
     ):
         """
@@ -82,15 +84,15 @@ class WeightCompression(Algorithm):
                 with a typical non-fixed zero point.
             INT4_SYM stands for a mixed-precision weights quantization with 4-bit integer as a primary precision.
                 Weights are quantized to a primary precision symmetrically without zero point.
-                All embeddings and the last layer are always compressed to a backup precision, which is INT8_ASYM,
-                by default. All others are quantized whether to 4-bit integer or to a backup precision depending on
+                All embeddings and the last layer are always compressed to a backup_mode, which is INT8_ASYM,
+                by default. All others are quantized whether to 4-bit integer or to a backup_mode depending on
                 criteria and the given ratio.
             INT4_ASYM is the same as INT4_SYM mode, but weights are quantized to a primary precision asymmetrically
                 with a typical non-fixed zero point.
             NF4 is the same as INT4_SYM mode, but primary precision is NF4 data type without zero point.
             E2M1 is the same as INT4_SYM mode, but primary precision is E2M1 data type without zero point.
         :param ratio: the ratio between primary and backup precisions (e.g. 0.9 means 90% of layers quantized to NF4
-            and the rest to INT8_ASYM).
+            and the rest to backup_mode).
         :param group_size: number of weights (e.g. 128) in the channel dimension
             that share quantization parameters (scale). The value -1 means no grouping.
         :param ignored_scope: An ignored scope that defined the list of model control
@@ -105,6 +107,11 @@ class WeightCompression(Algorithm):
         :param scale_estimation: determines whether to use or not scale estimation for 4 bit layers.
         :param gptq: determines whether to use or not GPTQ algorithm.
         :param lora_correction: determines whether to use or not LoRA Correction algorithm.
+        :param backup_mode: Defines a backup mode for mixed-precision weight compression.
+            NONE stands for original floating-point precision of the model weights.
+                In this mode, weights are retained in their original precision without any quantization.
+            INT8_SYM stands for 8-bit integer symmetric quantization without zero point.
+            INT8_ASYM stands for 8-bit integer asymmetric quantization with a typical non-fixed zero point.
         :param advanced_parameters: advanced parameters for algorithms in compression pipeline.
         """
         super().__init__()
@@ -114,7 +121,7 @@ class WeightCompression(Algorithm):
         self._ignored_scope = ignored_scope
         self._backend_entity = None
         self._algorithm_key = f"CW_{hash(self)}"
-        self._mean_statistics = {}
+        self._statistics = {}
         self._all_layers = all_layers
         self._sensitivity_metric = sensitivity_metric
         self._awq = awq
@@ -122,7 +129,7 @@ class WeightCompression(Algorithm):
         self._scale_estimation = scale_estimation
         self._gptq = gptq
         self._lora_correction = lora_correction
-        # self._lora_correction = True
+        self._backup_mode = backup_mode
         self._advanced_parameters = (
             advanced_parameters if advanced_parameters is not None else AdvancedCompressionParameters()
         )
@@ -270,7 +277,10 @@ class WeightCompression(Algorithm):
         return f"{percentage:.0f}% ({len(num_weights_list)} / {total_num_params})"
 
     def _get_bitwidth_distribution_str(
-        self, all_params: List[WeightCompressionParameters], ratio_defining_params: List[WeightCompressionParameters]
+        self,
+        all_params: List[WeightCompressionParameters],
+        ratio_defining_params: List[WeightCompressionParameters],
+        ignored_scope_weight_statistics: List[int],
     ) -> str:
         """
         Generates a table that shows the ratio of weights quantized to different number of bits.
@@ -278,27 +288,32 @@ class WeightCompression(Algorithm):
         :param all_params: Information about each weight node.
         :param ratio_defining_params: Information about weights that are used for calculating ratio between primary and
             backup precisions.
+        :param ignored_scope_weight_statistics: Information about weight nodes from IgnoredScope.
         :return: A string containing the table.
         """
-        num_bits_vs_num_weights_map = {}
+        dtype_vs_num_weights_map = {}
         ratio_defining_weight_names = set(wp.weight_name for wp in ratio_defining_params)
         for data in all_params:
-            num_bits = data.compression_config.num_bits
-            n_total, n_ratio_defining = num_bits_vs_num_weights_map.get(num_bits, ([], []))
+            dtype = data.compression_config.mode if data.compression_config is not None else "float"
+            n_total, n_ratio_defining = dtype_vs_num_weights_map.get(dtype, ([], []))
             if data.weight_name in ratio_defining_weight_names:
                 n_ratio_defining.append(data.num_weights)
             n_total.append(data.num_weights)
-            num_bits_vs_num_weights_map[num_bits] = (n_total, n_ratio_defining)
+            dtype_vs_num_weights_map[dtype] = (n_total, n_ratio_defining)
+
+        if ignored_scope_weight_statistics:
+            n_total, n_ratio_defining = dtype_vs_num_weights_map.get("float", ([], []))
+            dtype_vs_num_weights_map["float"] = (n_total + ignored_scope_weight_statistics, n_ratio_defining)
 
         num_ratio_defining_weights = sum(ws.num_weights for ws in ratio_defining_params)
         num_ratio_defining_params = len(ratio_defining_params)
-        num_total_weights = sum(ws.num_weights for ws in all_params)
-        num_params = len(all_params)
-        num_bits_vs_num_weights_map = OrderedDict(sorted(num_bits_vs_num_weights_map.items(), reverse=True))
+        num_total_weights = sum(ws.num_weights for ws in all_params) + sum(ignored_scope_weight_statistics)
+        num_params = len(all_params) + len(ignored_scope_weight_statistics)
+        dtype_vs_num_weights_map = OrderedDict(sorted(dtype_vs_num_weights_map.items(), reverse=True))
         # Table creation
-        header = ["Num bits (N)", "% all parameters (layers)", "% ratio-defining parameters (layers)"]
+        header = ["Weight compression mode", "% all parameters (layers)", "% ratio-defining parameters (layers)"]
         rows = []
-        for bitwidth, (n_total, n_ratio_defining) in num_bits_vs_num_weights_map.items():
+        for bitwidth, (n_total, n_ratio_defining) in dtype_vs_num_weights_map.items():
             rows.append(
                 [
                     bitwidth,
@@ -311,6 +326,35 @@ class WeightCompression(Algorithm):
         pretty_string = f"Statistics of the bitwidth distribution:\n{table}"
         return pretty_string
 
+    def _get_ignored_scope_weight_statistics(self, model: TModel, graph: NNCFGraph) -> List[int]:
+        """
+        Collect the weight statistics for nodes in the ignored scope.
+
+        :param model: Model for statistics collection.
+        :param graph: Model graph.
+        :return: A list of weight sizes for the ignored nodes.
+        """
+        ignored_names = get_ignored_node_names_from_ignored_scope(self._ignored_scope, graph, strict=False)
+        weighted_metatypes = (
+            self._backend_entity.matmul_metatypes
+            + self._backend_entity.embedding_metatypes
+            + self._backend_entity.convolution_metatypes
+        )
+        ignored_scope_weight_statistics = []
+        for node_name in ignored_names:
+            node = graph.get_node_by_name(node_name)
+            is_node_with_weights = self._backend_entity.is_node_with_weights(node, graph)
+            if not is_node_with_weights or node.metatype not in weighted_metatypes:
+                continue
+            for _, weight_port_id in self._backend_entity.get_weight_names_and_port_ids(node, graph):
+                weight_dtype = self._backend_entity.get_weight_dtype(node, weight_port_id, model, graph)
+                if weight_dtype.is_float():
+                    continue
+                weight_shape = self._backend_entity.get_weight_shape(node, weight_port_id, graph)
+                weight_size = reduce(operator.mul, weight_shape, 1)
+                ignored_scope_weight_statistics.append(weight_size)
+        return ignored_scope_weight_statistics
+
     def apply(
         self,
         model: TModel,
@@ -320,7 +364,6 @@ class WeightCompression(Algorithm):
     ) -> TModel:
         self._set_backend_entity(model)
         nodes_to_compress = self._get_nodes_to_compress(graph)
-
         data_aware_mixed_precision = (
             self._sensitivity_metric != SensitivityMetric.WEIGHT_QUANTIZATION_ERROR and self._ratio != 1.0
         )
@@ -340,12 +383,7 @@ class WeightCompression(Algorithm):
                     continue
 
                 weight_dtype = self._backend_entity.get_weight_dtype(node, weight_port_id, model, graph)
-                if weight_dtype not in [
-                    TensorDataType.float16,
-                    TensorDataType.bfloat16,
-                    TensorDataType.float32,
-                    TensorDataType.float64,
-                ]:
+                if not weight_dtype.is_float():
                     continue
                 weight_shape = self._backend_entity.get_weight_shape(node, weight_port_id, graph)
                 weight_size = reduce(operator.mul, weight_shape, 1)
@@ -358,24 +396,56 @@ class WeightCompression(Algorithm):
                     and len(reduction_axes) != 1
                 ):
                     # NNCF supports multiple reduction axes only for ops with group_size != -1.
-                    # Convolution ops are always quantized to 8-bits (without groups).
+                    # Convolution ops are always kept in backup mode.
                     # Embedding layers are quantized to 4-bits only if all_layers=True.
                     # MatMul ops can't have multiple reduction axes.
                     nncf_logger.warning(
                         f"Weight compression expects a single reduction axis, but {len(reduction_axes)} given. "
                         f"Weight shape: {weight_shape}, reduction axes: {reduction_axes}, "
-                        f"node name: {node.node_name}. The node will be asymmetrically quantized to 8 bits."
+                        f"node name: {node.node_name}. The node will be in {self._backup_mode} mode."
                     )
 
+                if self._backup_mode == BackupMode.NONE:
+                    wc_config = None
+                else:
+                    mode = (
+                        CompressWeightsMode.INT8_ASYM
+                        if self._backup_mode == BackupMode.INT8_ASYM
+                        else CompressWeightsMode.INT8_SYM
+                    )
+                    wc_config = WeightCompressionConfig(mode=mode)
                 weight_params = WeightCompressionParameters(
-                    weight_name, node, weight_port_id, weight_size, reduction_axes
+                    weight_name, node, weight_port_id, weight_size, reduction_axes, wc_config
                 )
                 all_weight_params.append(weight_params)
                 weight_names.add(weight_name)
 
         ratio_defining_params = self._get_ratio_defining_params(all_weight_params, is_last_layer_shared)
         self._set_weight_compression_config(ratio_defining_params, model, graph)
-        nncf_logger.info(self._get_bitwidth_distribution_str(all_weight_params, ratio_defining_params))
+        ignored_scope_weight_statistics = self._get_ignored_scope_weight_statistics(model, graph)
+        nncf_logger.info(
+            self._get_bitwidth_distribution_str(
+                all_weight_params, ratio_defining_params, ignored_scope_weight_statistics
+            )
+        )
+
+        if self._backup_mode == BackupMode.NONE:
+            # Filter all_weight_params and nodes_to_compress by excluding nodes
+            # that should remain in their original floating-point precision
+            nodes_names_to_exclude = {
+                w_params.node_with_weight.node_name
+                for w_params in all_weight_params
+                if w_params.compression_config is None
+            }
+            all_weight_params = list(
+                filter(
+                    lambda w_params: w_params.node_with_weight.node_name not in nodes_names_to_exclude,
+                    all_weight_params,
+                )
+            )
+            nodes_to_compress = list(
+                filter(lambda node: node.node_name not in nodes_names_to_exclude, nodes_to_compress)
+            )
 
         if self._awq:
             awq_params = self._advanced_parameters.awq_params
@@ -384,7 +454,7 @@ class WeightCompression(Algorithm):
                 self._backend_entity.name_to_node_mapping,
                 all_weight_params,
                 nodes_to_compress,
-                self._mean_statistics,
+                self._statistics,
                 awq_params.subset_size,
                 awq_params.percent_to_apply,
                 awq_params.alpha_min,
@@ -392,7 +462,9 @@ class WeightCompression(Algorithm):
                 awq_params.steps,
             )
             awq_algo.apply(model, graph)
-            awq_algo.update_statistics(self._mean_statistics)
+            # After applying AWQ we need to update statistics since AWQ alters the activations
+            awq_algo.update_statistics(self._statistics)
+            del awq_algo
 
         scales = {}
         zero_points = {}
@@ -415,7 +487,7 @@ class WeightCompression(Algorithm):
                     self._backend_entity.name_to_node_mapping,
                     all_weight_params,
                     nodes_to_compress,
-                    self._mean_statistics,
+                    self._statistics,
                     scale_estimation_params.subset_size,
                     scale_estimation_params.initial_steps,
                     scale_estimation_params.scale_steps,
@@ -425,7 +497,7 @@ class WeightCompression(Algorithm):
 
             if self._lora_correction:
                 lora_correction_params = self._advanced_parameters.lora_correction_params
-                lora_correction_algo = LoraCorrectionAlgorithm(self._mean_statistics, lora_correction_params)
+                lora_correction_algo = LoraCorrectionAlgorithm(self._statistics, lora_correction_params)
                 description += " with correction of low-rank adapters"
 
         # Sort weight params to start compression with the bigger constants. This lowers peak memory footprint.
@@ -455,6 +527,7 @@ class WeightCompression(Algorithm):
                 "scale_estimation": self._scale_estimation,
                 "gptq": self._gptq,
                 "lora_correction": self._lora_correction,
+                "backup_mode": self._backup_mode.value,
                 "advanced_parameters": convert_to_dict_recursively(self._advanced_parameters),
             },
             algo_name="weight_compression",
@@ -477,18 +550,17 @@ class WeightCompression(Algorithm):
 
     def _collect_statistics(self, dataset: Dataset, nodes: List[NNCFNode], graph: NNCFGraph, model: TModel):
         """
-        Collects input activations for the given nodes on the dataset.
+        Collects statistics required for data-aware algorithms and/or mixed precision assignment
 
         :param dataset: Dataset to collect values.
         :param nodes: List of nodes, whose inputs are collected.
-        :param model: Model for statistics collection.
         :param graph: Model graph.
-        :return: statistics values itself per node name.
+        :param model: Model for statistics collection.
         """
 
         statistics_aggregator = StatisticsAggregatorFactory.create(model, dataset)
 
-        mean_statistic_points = None
+        statistic_points = None
         matmul_input_to_output_nodes_map = None
 
         data_aware_precision_assignment = (
@@ -496,9 +568,14 @@ class WeightCompression(Algorithm):
         )
         data_aware_compression = self._awq or self._scale_estimation or self._lora_correction
         if data_aware_compression or data_aware_precision_assignment:
+            # Collect statistics only for weighted MatMul nodes
             matmul_metatypes = self._backend_entity.matmul_metatypes
             matmul_nodes = filter(lambda node: node.metatype in matmul_metatypes, nodes)
 
+            # Each weighted MatMul node has two input nodes: an activation and a weight.
+            # A single activation may be an input to multiple MatMul nodes.
+            # Below is a mapping from activation node and a port id to corresponding matmul nodes which accept this
+            # activation as an input.
             matmul_input_to_output_nodes_map = defaultdict(list)
             for node in matmul_nodes:
                 act_node, output_port_id = self._get_activation_node_and_port(node, graph)
@@ -510,10 +587,10 @@ class WeightCompression(Algorithm):
                 )
                 statistics_aggregator.register_statistic_points(self._mixed_precision_statistics)
             if data_aware_compression:
-                mean_statistic_points = self.get_statistic_points(
+                statistic_points = self.get_statistic_points(
                     model, graph, matmul_input_to_output_nodes_map.keys(), self._subset_size
                 )
-                statistics_aggregator.register_statistic_points(mean_statistic_points)
+                statistics_aggregator.register_statistic_points(statistic_points)
         if self._gptq:
             self._gptq_statistics = self._gptq_algo.get_statistic_points(model, graph, nodes)
             statistics_aggregator.register_statistic_points(self._gptq_statistics)
@@ -525,14 +602,14 @@ class WeightCompression(Algorithm):
             statistics_aggregator.collect_statistics(model, graph)
             statistics_aggregator.dump_statistics(self._statistics_file_path)
 
-        if mean_statistic_points is not None:
-            self._mean_statistics = self._get_mean_statistics(matmul_input_to_output_nodes_map, mean_statistic_points)
+        if statistic_points is not None:
+            self._statistics = self._get_statistics(matmul_input_to_output_nodes_map, statistic_points)
 
     def get_statistic_points(
         self,
         model: TModel,
         graph: NNCFGraph,
-        matmul_input_nodes: Iterable[Tuple[NNCFNode, int]],
+        nodes_and_port_ids: Iterable[Tuple[NNCFNode, int]],
         subset_size: Optional[int] = None,
     ) -> StatisticPointsContainer:
         """
@@ -540,14 +617,18 @@ class WeightCompression(Algorithm):
 
         :param model: Model for statistics collection.
         :param graph: Model graph.
+        :param nodes_and_port_ids: Nodes and port ids for which statistics should be collected.
+        :param subset_size: Number of samples to collect.
         :return: Statistic points, for which StatisticsCollector should collect statistics.
         """
 
         statistic_container = StatisticPointsContainer()
-        for act_node, output_port_id in matmul_input_nodes:
+        for node, output_port_id in nodes_and_port_ids:
             statistic_point = self._backend_entity.target_point(
-                TargetType.POST_LAYER_OPERATION, act_node.node_name, port_id=output_port_id
+                TargetType.POST_LAYER_OPERATION, node.node_name, port_id=output_port_id
             )
+            # Each activation tensor is assumed to have shape [B, L, C], where B=1 and L is a sequence length dimension.
+            # We reduce activations across B and L dimensions, mean is used as a reduction function.
             stat_collector = self._backend_entity.mean_statistic_collector(
                 reduction_axes=(0, 1), subset_size=subset_size
             )
@@ -559,9 +640,18 @@ class WeightCompression(Algorithm):
 
         return statistic_container
 
-    def _get_mean_statistics(
+    def _get_statistics(
         self, matmul_input_to_output_nodes_map: Dict[Tuple[NNCFNode, int], List[NNCFNode]], statistic_points
-    ):
+    ) -> Dict[str, WCStatistics]:
+        """
+        Retrieve collected statistics.
+
+        :param matmul_input_to_output_nodes_map: A mapping from activation node and a port id to corresponding matmul
+            nodes which accept this activation as an input.
+        :param statistic_points: Statistic points object.
+        :return: Collected statistics.
+        """
+
         def input_filter_func(point, port_id):
             # For the floating-point statistics collected in POST_LAYER style,
             # we also need to determine the output port id.
@@ -572,7 +662,12 @@ class WeightCompression(Algorithm):
                 and point.target_point.port_id == port_id
             )
 
-        mean_statistics = {}
+        # For each node we store statistics in a WCStatistics data-class. It contains the followin fields:
+        #   mean_values=[mean_value_1, ..., mean_value_n]
+        #   shapes=[shape_1, ..., shape_n]
+        # Where mean_value is a 1D tensor representing an activation reduced over batch and sequence length dimensions,
+        # shape is an original shape of an activation before reduction, n is the size of the dataset (or subset_size).
+        statistics = {}
         for (act_node, output_port_id), matmul_nodes in matmul_input_to_output_nodes_map.items():
             mean_values = []
             shapes = []
@@ -583,7 +678,9 @@ class WeightCompression(Algorithm):
                     value[0, 0] for value in tensor_collector.get_statistics()[self._backend_entity.MEAN_STAT]
                 )
                 shapes.extend(tensor_collector.get_statistics()[self._backend_entity.SHAPE_STAT])
-            stats = {"mean_values": mean_values, "shapes": shapes}
+            stats = WCStatistics(mean_values, shapes)
+            # Each activation node may have multiple MatMul nodes which it is an input to
             for node in matmul_nodes:
-                mean_statistics[node.node_name] = copy.deepcopy(stats)
-        return mean_statistics
+                statistics[node.node_name] = copy.deepcopy(stats)
+
+        return statistics
