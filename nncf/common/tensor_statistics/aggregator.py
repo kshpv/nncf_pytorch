@@ -86,33 +86,34 @@ class StatisticsAggregator(ABC):
             raise nncf.ValidationError(EMPTY_DATASET_ERROR)
 
     def load_statistics_from_file(self, file_name: str) -> None:
-        try:
-            with open(file_name, "rb") as f:
-                dumped_data = pickle.load(f)
-        except Exception as e:
-            nncf_logger.error(f"Failed to open a file {file_name} with error {e}")
-            raise Exception  # TODO: ???
+        loaded_data = StatisticsSerializer.load_from_file(file_name)
+        self._load_statistics(loaded_data)
+
+    def _load_statistics(self, data) -> None:
         for _, statistic_point, tensor_collector in self.statistic_points.get_tensor_collectors():
             statistics = tensor_collector.get_statistics()
-            statistics_key = get_statistics_key(statistics, statistic_point.target_point)
-            if statistics_key not in dumped_data:
-                raise ValueError("Not found statistics for ...")
+            statistics_key = self._get_statistics_key(statistics, statistic_point.target_point)
+            if statistics_key not in data:
+                raise ValueError(f"Not found statistics for {statistics_key}")
             statistics = tensor_collector.get_statistics()
-            statistics.load_data(dumped_data[statistics_key])
-            tensor_collector.is_built = True  # Do not like this. How to avoid it?
+            statistics.load_data(data[statistics_key])
 
     def dump_statistics(self, file_name: str) -> None:
+        data_to_dump = self._prepare_statistics()
+        StatisticsSerializer.dump_to_file(data_to_dump, file_name)
+
+    def _prepare_statistics(self):
         data_to_dump = {}
         for _, statistic_point, tensor_collector in self.statistic_points.get_tensor_collectors():
             statistics = tensor_collector.get_statistics()
-            statistics_key = get_statistics_key(statistics, statistic_point.target_point)
+            statistics_key = self._get_statistics_key(statistics, statistic_point.target_point)
             data = statistics.get_data()
             data_to_dump[statistics_key] = data
-        try:
-            with open(file_name, "wb") as f:
-                pickle.dump(data_to_dump, f)
-        except Exception as e:
-            nncf_logger.error(f"Failed to dump statistics to file {file_name} with error {e}")
+        return data_to_dump
+
+    def _get_statistics_key(self, statistics, target_point):
+        target_point_id = f"{target_point.target_node_name}_{target_point.type}_{target_point.port_id}"
+        return statistics.__class__.__name__ + target_point_id
 
     def register_statistic_points(self, statistic_points: StatisticPointsContainer) -> None:
         """
@@ -182,6 +183,27 @@ class StatisticsAggregator(ABC):
         """
 
 
-def get_statistics_key(statistics, target_point):
-    target_point_id = f"{target_point.target_node_name}_{target_point.type}_{target_point.port_id}"
-    return statistics.__class__.__name__ + target_point_id
+class StatisticsSerializer:
+    @staticmethod
+    def load_from_file(file_name: str) -> dict:
+        try:
+            with open(file_name, "rb") as f:
+                return pickle.load(f)
+        except FileNotFoundError:
+            nncf_logger.error(f"File not found: {file_name}")
+            raise
+        except pickle.UnpicklingError:
+            nncf_logger.error(f"Error unpickling file: {file_name}")
+            raise
+        except Exception as e:
+            nncf_logger.error(f"Failed to open file {file_name} with error: {e}")
+            raise
+
+    @staticmethod
+    def dump_to_file(data: dict, file_name: str) -> None:
+        try:
+            with open(file_name, "wb") as f:
+                pickle.dump(data, f)
+        except Exception as e:
+            nncf_logger.error(f"Failed to write to file {file_name} with error: {e}")
+            raise
