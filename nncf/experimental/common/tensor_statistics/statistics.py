@@ -11,12 +11,10 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 from typing import Any, ClassVar, Dict, Tuple, Type
 
 from nncf.tensor import Tensor
-from nncf.tensor import functions as fns
 
 
 class TensorStatistic:
@@ -32,11 +30,6 @@ class MinMaxTensorStatistic(TensorStatistic):
 
     min_values: Tensor
     max_values: Tensor
-
-    def __eq__(self, other: TensorStatistic):
-        if isinstance(other, MinMaxTensorStatistic):
-            return fns.allclose(self.min_values, other.min_values) and fns.allclose(self.max_values, other.max_values)
-        return False
 
     def get_data(self):
         return self.min_values.data, self.max_values.data
@@ -54,11 +47,6 @@ class MeanTensorStatistic(TensorStatistic):
     mean_values: Tensor
     shape: Tuple[int, ...]
 
-    def __eq__(self, other: TensorStatistic):
-        if isinstance(other, MeanTensorStatistic):
-            return self.shape == other.shape and fns.allclose(self.mean_values, other.mean_values)
-        return False
-
     def get_data(self):
         return self.mean_values, self.shape
 
@@ -75,13 +63,6 @@ class MedianMADTensorStatistic(TensorStatistic):
     median_values: Tensor
     mad_values: Tensor
 
-    def __eq__(self, other: TensorStatistic):
-        if isinstance(other, MedianMADTensorStatistic):
-            return fns.allclose(self.median_values, other.median_values) and fns.allclose(
-                self.mad_values, other.mad_values
-            )
-        return False
-
     def get_data(self):
         return self.median_values, self.mad_values
 
@@ -96,16 +77,6 @@ class PercentileTensorStatistic(TensorStatistic):
 
     percentile_vs_values_dict: Dict[str, Tensor]
 
-    def __eq__(self, other: TensorStatistic):
-        if isinstance(other, PercentileTensorStatistic):
-            if Counter(self.percentile_vs_values_dict.keys()) != Counter(other.percentile_vs_values_dict.keys()):
-                return False
-            for pct in self.percentile_vs_values_dict:
-                if not fns.allclose(self.percentile_vs_values_dict[pct], other.percentile_vs_values_dict[pct]):
-                    return False
-            return True
-        return False
-
     def get_data(self):
         return self.percentile_vs_values_dict
 
@@ -118,11 +89,6 @@ class RawTensorStatistic(TensorStatistic):
     VALUES_STATS: ClassVar[str] = "values"
 
     values: Tensor
-
-    def __eq__(self, other: RawTensorStatistic) -> bool:
-        if isinstance(other, PercentileTensorStatistic):
-            return fns.allclose(self.values, other.values)
-        return False
 
     def get_data(self):
         return self.values
@@ -137,11 +103,6 @@ class WeightQuantizationErrorTensorStatistic(TensorStatistic):
 
     weight_quantization_error: Tensor
 
-    def __eq__(self, other: TensorStatistic) -> bool:
-        if isinstance(other, WeightQuantizationErrorTensorStatistic):
-            return fns.allclose(self.weight_quantization_error, other.weight_quantization_error)
-        return False
-
     def get_data(self):
         return self.weight_quantization_error
 
@@ -154,11 +115,6 @@ class HessianTensorStatistic(TensorStatistic):
     HESSIAN_INPUT_ACTIVATION_STATS: ClassVar[str] = "hessian"
 
     hessian: Tensor
-
-    def __eq__(self, other: TensorStatistic) -> bool:
-        if isinstance(other, HessianTensorStatistic):
-            return fns.allclose(self.hessian, other.hessian)
-        return False
 
     def get_data(self):
         return self.values
@@ -173,11 +129,6 @@ class MeanVarianceTensorStatistic(TensorStatistic):
 
     mean_variance: Tensor
 
-    def __eq__(self, other: TensorStatistic) -> bool:
-        if isinstance(other, MeanVarianceTensorStatistic):
-            return fns.allclose(self.mean_variance, other.mean_variance)
-        return False
-
     def get_data(self):
         return self.mean_variance
 
@@ -191,11 +142,6 @@ class MaxVarianceTensorStatistic(TensorStatistic):
 
     max_variance: Tensor
 
-    def __eq__(self, other: TensorStatistic) -> bool:
-        if isinstance(other, MaxVarianceTensorStatistic):
-            return fns.allclose(self.max_variance, other.max_variance)
-        return False
-
     def get_data(self):
         return self.max_variance
 
@@ -208,11 +154,6 @@ class MeanMagnitudeTensorStatistic(TensorStatistic):
     MEAN_MAGNITUDE_STAT: ClassVar[str] = "mean_magnitude"
 
     mean_magnitude: Tensor
-
-    def __eq__(self, other: TensorStatistic) -> bool:
-        if isinstance(other, MeanMagnitudeTensorStatistic):
-            return fns.allclose(self.mean_magnitude, other.mean_magnitude)
-        return False
 
     def get_data(self):
         return self.mean_magnitude
