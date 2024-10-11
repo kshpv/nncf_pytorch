@@ -40,6 +40,19 @@ class MinMaxTensorStatistic(TensorStatistic):
 
 
 @dataclass
+class AbsMaxTensorStatistic(TensorStatistic):
+    ABS_MAX_STAT: ClassVar[str] = "abs_max"
+
+    abs_max: Tensor
+
+    def get_data(self):
+        return self.abs_max.data
+
+    def load_data(self, abs_max):
+        self.abs_max = abs_max
+
+
+@dataclass
 class MeanTensorStatistic(TensorStatistic):
     MEAN_STAT: ClassVar[str] = "mean_values"
     SHAPE_STAT: ClassVar[str] = "shape"

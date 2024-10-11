@@ -22,6 +22,7 @@ from nncf.common.graph.transformations.commands import TargetType
 from nncf.common.tensor_statistics.statistic_point import StatisticPoint
 from nncf.experimental.common.tensor_statistics.collectors import MaxAggregator
 from nncf.experimental.common.tensor_statistics.collectors import TensorCollector
+from nncf.experimental.common.tensor_statistics.statistics import AbsMaxTensorStatistic
 from nncf.openvino.graph.layout import OVLayoutElem
 from nncf.openvino.graph.layout import get_linear_weights_layout_from_node
 from nncf.openvino.graph.metatypes.groups import QUANTIZE_AGNOSTIC_OPERATIONS
@@ -77,12 +78,12 @@ class OVSmoothQuantAlgoBackend(SmoothQuantAlgoBackend):
 
     @staticmethod
     def get_abs_max_channel_collector(
-        num_samples: int, stats_reduction_axes: Tuple[int], inplace: bool, branch_key: str
+        num_samples: int, stats_reduction_axes: Tuple[int], inplace: bool
     ) -> TensorCollector:
-        collector = TensorCollector()
+        collector = TensorCollector(AbsMaxTensorStatistic)
         reducer = OVAbsMaxReducer(reduction_axes=stats_reduction_axes, inplace=inplace)
         aggregator = MaxAggregator(num_samples=num_samples)
-        collector.register_statistic_branch(branch_key, reducer, aggregator)
+        collector.register_statistic_branch(AbsMaxTensorStatistic.ABS_MAX_STAT, reducer, aggregator)
         return collector
 
     @staticmethod

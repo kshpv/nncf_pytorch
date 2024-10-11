@@ -34,7 +34,6 @@ from nncf.tensor import functions as fns
 
 TModel = TypeVar("TModel")
 TTensor = TypeVar("TTensor")
-STATISTIC_BRANCH_KEY = "abs_max"
 ALPHA_MAP = {"convolution": 0.05, "matmul": 0.95}
 
 
@@ -241,7 +240,7 @@ class SmoothQuant(Algorithm):
             self._backend_entity.get_filter_fn_for_statistics(act_port, self._algorithm_key),
             self._algorithm_key,
         ):
-            statistic = tensor_collector.get_statistics()[STATISTIC_BRANCH_KEY]
+            statistic = tensor_collector.get_statistics()
             statistics_for_node.append(statistic)
         return statistics_for_node
 
@@ -264,7 +263,7 @@ class SmoothQuant(Algorithm):
                 graph, node_to_smooth, node_data["input_act_port"]
             )
             stat_collector = self._backend_entity.get_abs_max_channel_collector(
-                self._subset_size, input_reduction_axes, self._inplace_statistics, STATISTIC_BRANCH_KEY
+                self._subset_size, input_reduction_axes, self._inplace_statistics
             )
             statistic_container.add_statistic_point(
                 StatisticPoint(

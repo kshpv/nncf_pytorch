@@ -23,6 +23,7 @@ from nncf.common.quantization.quantizer_propagation.structs import QuantizationT
 from nncf.common.tensor_statistics.statistic_point import StatisticPoint
 from nncf.experimental.common.tensor_statistics.collectors import MaxAggregator
 from nncf.experimental.common.tensor_statistics.collectors import TensorCollector
+from nncf.experimental.common.tensor_statistics.statistics import AbsMaxTensorStatistic
 from nncf.openvino.graph.transformations.commands import OVMultiplyInsertionCommand
 from nncf.openvino.graph.transformations.commands import OVWeightUpdateCommand
 from nncf.quantization.algorithms.smooth_quant.backend import SmoothQuantAlgoBackend
@@ -112,10 +113,10 @@ class PTSmoothQuantAlgoBackend(SmoothQuantAlgoBackend):
     def get_abs_max_channel_collector(
         num_samples: int, stats_reduction_axes: Tuple[int], inplace: bool, branch_key: str
     ) -> TensorCollector:
-        collector = TensorCollector()
+        collector = TensorCollector(AbsMaxTensorStatistic)
         reducer = PTAbsMaxReducer(reduction_axes=stats_reduction_axes)
         aggregator = MaxAggregator(num_samples=num_samples)
-        collector.register_statistic_branch(branch_key, reducer, aggregator)
+        collector.register_statistic_branch(AbsMaxTensorStatistic.ABS_MAX_STAT, reducer, aggregator)
         return collector
 
     @staticmethod
