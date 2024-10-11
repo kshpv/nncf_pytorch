@@ -27,9 +27,6 @@ TModel = TypeVar("TModel")
 
 
 class WeightCompressionAlgoBackend(ABC):
-    MEAN_STAT = "mean_values"
-    SHAPE_STAT = "shape_values"
-
     @property
     @abstractmethod
     def matmul_metatypes(self) -> List[OperatorMetatype]:

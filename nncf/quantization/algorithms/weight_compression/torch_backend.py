@@ -24,6 +24,7 @@ from nncf.common.graph.transformations.layout import TransformationLayout
 from nncf.experimental.common.tensor_statistics.collectors import NoopAggregator
 from nncf.experimental.common.tensor_statistics.collectors import ShapeReducer
 from nncf.experimental.common.tensor_statistics.collectors import TensorCollector
+from nncf.experimental.common.tensor_statistics.statistics import MeanTensorStatistic
 from nncf.parameters import CompressWeightsMode
 from nncf.quantization.algorithms.weight_compression.backend import WeightCompressionAlgoBackend
 from nncf.quantization.algorithms.weight_compression.config import WeightCompressionParameters
@@ -149,9 +150,9 @@ class PTWeightCompressionAlgoBackend(WeightCompressionAlgoBackend):
     ) -> TensorCollector:
         mean_reducer = PTMeanReducer(reduction_axes)
         shape_reducer = ShapeReducer()
-        collector = TensorCollector()
-        collector.register_statistic_branch(self.MEAN_STAT, mean_reducer, NoopAggregator(subset_size))
-        collector.register_statistic_branch(self.SHAPE_STAT, shape_reducer, NoopAggregator(subset_size))
+        collector = TensorCollector(MeanTensorStatistic)
+        collector.register_statistic_branch(MeanTensorStatistic.MEAN_STAT, mean_reducer, NoopAggregator(subset_size))
+        collector.register_statistic_branch(MeanTensorStatistic.SHAPE_STAT, shape_reducer, NoopAggregator(subset_size))
         return collector
 
     @staticmethod
