@@ -9,12 +9,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pickle
 from collections import UserDict
 from typing import Any, Callable, Generator, Tuple, cast
 
 from nncf.common.graph.transformations.commands import TargetPoint
-from nncf.common.logging.logger import nncf_logger
 from nncf.common.tensor import NNCFTensor
 from nncf.common.tensor_statistics.collectors import TensorStatisticCollectorBase
 
@@ -118,37 +116,3 @@ class StatisticPointsContainer(UserDict):  # type: ignore
         for _statistic_point in self.iter_through_statistic_points_in_target_node(target_node_name, filter_fn):
             for _tensor_collector in _statistic_point.algorithm_to_tensor_collectors[algorithm]:
                 yield _tensor_collector
-
-    def dump_statistics(self, file_name: str) -> None:
-        data_to_dump = {}
-        for _, statistic_point, tensor_collector in self.get_tensor_collectors():
-            statistics = tensor_collector.get_statistics()
-            statistics_key = get_statistics_key(statistics, statistic_point.target_point)
-            data = statistics.get_data()
-            data_to_dump[statistics_key] = data
-        try:
-            with open(file_name, "wb") as f:
-                pickle.dump(data_to_dump, f)
-        except Exception as e:
-            nncf_logger.error(f"Failed to dump statistics to file {file_name} with error {e}")
-
-    def load_statistics_from_file(self, file_name: str) -> None:
-        try:
-            with open(file_name, "rb") as f:
-                dumped_data = pickle.load(f)
-        except Exception as e:
-            nncf_logger.error(f"Failed to open a file {file_name} with error {e}")
-            raise Exception  # TODO: ???
-        for _, statistic_point, tensor_collector in self.get_tensor_collectors():
-            statistics = tensor_collector.get_statistics()
-            statistics_key = get_statistics_key(statistics, statistic_point.target_point)
-            if statistics_key not in dumped_data:
-                raise ValueError("Not found statistics for ...")
-            statistics = tensor_collector.get_statistics()
-            statistics.load_data(dumped_data[statistics_key])
-            tensor_collector.is_built = True  # Do not like this. How to avoid it?
-
-
-def get_statistics_key(statistics, target_point):
-    target_point_id = f"{target_point.target_node_name}_{target_point.type}_{target_point.port_id}"
-    return statistics.__class__.__name__ + target_point_id
