@@ -13,8 +13,9 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import ClassVar, Dict, Tuple
+from typing import Any, ClassVar, Dict, Tuple, Type
 
+import nncf
 from nncf.tensor import Tensor
 from nncf.tensor import functions as fns
 
@@ -219,3 +220,48 @@ class MeanMagnitudeTensorStatistic(TensorStatistic):
 
     def load_data(self, values):
         self.values = values
+
+
+def build_statistic_container(statistic_container_cls: Type[TensorStatistic], kwargs: Dict[Any, Any]):
+    if issubclass(statistic_container_cls, MinMaxTensorStatistic):
+        return statistic_container_cls(
+            min_values=kwargs[MinMaxTensorStatistic.MIN_STAT], max_values=kwargs[MinMaxTensorStatistic.MAX_STAT]
+        )
+    if issubclass(statistic_container_cls, MeanTensorStatistic):
+        return statistic_container_cls(
+            mean_values=kwargs[MeanTensorStatistic.MEAN_STAT], shape=kwargs[MeanTensorStatistic.SHAPE_STAT]
+        )
+    if issubclass(statistic_container_cls, RawTensorStatistic):
+        return statistic_container_cls(values=kwargs[RawTensorStatistic.VALUES_STATS])
+    if issubclass(statistic_container_cls, MedianMADTensorStatistic):
+        return statistic_container_cls(
+            median_values=kwargs[MedianMADTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY][
+                MedianMADTensorStatistic.MEDIAN_VALUES_STAT
+            ],
+            mad_values=kwargs[MedianMADTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY][
+                MedianMADTensorStatistic.MAD_VALUES_STAT
+            ],
+        )
+    if issubclass(statistic_container_cls, PercentileTensorStatistic):
+        if PercentileTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY in kwargs:
+            percentile_vs_values_dict = kwargs[PercentileTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY]
+        else:
+            percentile_vs_values_dict = {}
+            for (_, percentile), value in kwargs.items():
+                percentile_vs_values_dict[percentile] = value
+        return statistic_container_cls(percentile_vs_values_dict=percentile_vs_values_dict)
+    if issubclass(statistic_container_cls, HessianTensorStatistic):
+        return statistic_container_cls(values=kwargs[HessianTensorStatistic.HESSIAN_INPUT_ACTIVATION_STATS])
+    if issubclass(statistic_container_cls, MeanVarianceTensorStatistic):
+        return statistic_container_cls(values=kwargs[MeanVarianceTensorStatistic.MEAN_VARIANCE_STAT])
+    if issubclass(statistic_container_cls, MeanMagnitudeTensorStatistic):
+        return statistic_container_cls(values=kwargs[MeanMagnitudeTensorStatistic.MEAN_MAGNITUDE_STAT])
+    if issubclass(statistic_container_cls, MaxVarianceTensorStatistic):
+        return statistic_container_cls(values=kwargs[MaxVarianceTensorStatistic.MAX_VARIANCE_STAT])
+    if issubclass(statistic_container_cls, WeightQuantizationErrorTensorStatistic):
+        return statistic_container_cls(
+            values=kwargs[WeightQuantizationErrorTensorStatistic.WEIGHT_QUANTIZATION_ERROR_STATS]
+        )
+    raise nncf.InternalError(
+        f"Statistic collector class {statistic_container_cls} is not supported by the TensorCollector class."
+    )
