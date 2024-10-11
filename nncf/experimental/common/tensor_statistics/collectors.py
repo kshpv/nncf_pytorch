@@ -399,7 +399,10 @@ class MergedTensorCollector(TensorCollector):
         """
         :param tensor_collectors: Tensor collectors to merge.
         """
-        super().__init__()
+        stat_container = tensor_collectors[0]._stat_container
+        for tc in tensor_collectors[1:]:
+            assert tc._stat_container == stat_container
+        super().__init__(stat_container)
         aggregators: Dict[Tuple[int, int, int], List[Tuple[TensorCollector, AggregatorBase]]] = defaultdict(list)
         for tensor_collector in tensor_collectors:
             if not tensor_collector.enabled:

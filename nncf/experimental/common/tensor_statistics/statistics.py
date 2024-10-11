@@ -15,7 +15,6 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, ClassVar, Dict, Tuple, Type
 
-import nncf
 from nncf.tensor import Tensor
 from nncf.tensor import functions as fns
 
@@ -136,127 +135,101 @@ class RawTensorStatistic(TensorStatistic):
 class WeightQuantizationErrorTensorStatistic(TensorStatistic):
     WEIGHT_QUANTIZATION_ERROR_STATS: ClassVar[str] = "weight_quantization_error"
 
-    values: Tensor
+    weight_quantization_error: Tensor
 
     def __eq__(self, other: TensorStatistic) -> bool:
         if isinstance(other, WeightQuantizationErrorTensorStatistic):
-            return fns.allclose(self.values, other.values)
+            return fns.allclose(self.weight_quantization_error, other.weight_quantization_error)
         return False
 
     def get_data(self):
-        return self.values
+        return self.weight_quantization_error
 
-    def load_data(self, values):
-        self.values = values
+    def load_data(self, weight_quantization_error):
+        self.weight_quantization_error = weight_quantization_error
 
 
 @dataclass
 class HessianTensorStatistic(TensorStatistic):
     HESSIAN_INPUT_ACTIVATION_STATS: ClassVar[str] = "hessian"
 
-    values: Tensor
+    hessian: Tensor
 
     def __eq__(self, other: TensorStatistic) -> bool:
         if isinstance(other, HessianTensorStatistic):
-            return fns.allclose(self.values, other.values)
+            return fns.allclose(self.hessian, other.hessian)
         return False
 
     def get_data(self):
         return self.values
 
-    def load_data(self, values):
-        self.values = values
+    def load_data(self, hessian):
+        self.hessian = hessian
 
 
 @dataclass
 class MeanVarianceTensorStatistic(TensorStatistic):
     MEAN_VARIANCE_STAT: ClassVar[str] = "mean_variance"
 
-    values: Tensor
+    mean_variance: Tensor
 
     def __eq__(self, other: TensorStatistic) -> bool:
         if isinstance(other, MeanVarianceTensorStatistic):
-            return fns.allclose(self.values, other.values)
+            return fns.allclose(self.mean_variance, other.mean_variance)
         return False
 
     def get_data(self):
-        return self.values
+        return self.mean_variance
 
-    def load_data(self, values):
-        self.values = values
+    def load_data(self, mean_variance):
+        self.mean_variance = mean_variance
 
 
 @dataclass
 class MaxVarianceTensorStatistic(TensorStatistic):
     MAX_VARIANCE_STAT: ClassVar[str] = "max_variance"
 
-    values: Tensor
+    max_variance: Tensor
 
     def __eq__(self, other: TensorStatistic) -> bool:
         if isinstance(other, MaxVarianceTensorStatistic):
-            return fns.allclose(self.values, other.values)
+            return fns.allclose(self.max_variance, other.max_variance)
         return False
 
     def get_data(self):
-        return self.values
+        return self.max_variance
 
-    def load_data(self, values):
-        self.values = values
+    def load_data(self, max_variance):
+        self.max_variance = max_variance
 
 
 @dataclass
 class MeanMagnitudeTensorStatistic(TensorStatistic):
     MEAN_MAGNITUDE_STAT: ClassVar[str] = "mean_magnitude"
 
-    values: Tensor
+    mean_magnitude: Tensor
 
     def __eq__(self, other: TensorStatistic) -> bool:
         if isinstance(other, MeanMagnitudeTensorStatistic):
-            return fns.allclose(self.values, other.values)
+            return fns.allclose(self.mean_magnitude, other.mean_magnitude)
         return False
 
     def get_data(self):
-        return self.values
+        return self.mean_magnitude
 
-    def load_data(self, values):
-        self.values = values
+    def load_data(self, mean_magnitude):
+        self.mean_magnitude = mean_magnitude
 
 
 def build_statistic_container(
     statistic_container_cls: Type[TensorStatistic], kwargs: Dict[Any, Any]
 ) -> TensorStatistic:
-    # Mapping of classes to their respective initialization parameters
-    class_param_map = {
-        MinMaxTensorStatistic: {
-            "min_values": kwargs[MinMaxTensorStatistic.MIN_STAT],
-            "max_values": kwargs[MinMaxTensorStatistic.MAX_STAT],
-        },
-        MeanTensorStatistic: {
-            "mean_values": kwargs[MeanTensorStatistic.MEAN_STAT],
-            "shape": kwargs[MeanTensorStatistic.SHAPE_STAT],
-        },
-        RawTensorStatistic: {"values": kwargs[RawTensorStatistic.VALUES_STATS]},
-        MedianMADTensorStatistic: {
-            "median_values": kwargs[MedianMADTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY][
-                MedianMADTensorStatistic.MEDIAN_VALUES_STAT
-            ],
-            "mad_values": kwargs[MedianMADTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY][
-                MedianMADTensorStatistic.MAD_VALUES_STAT
-            ],
-        },
-        HessianTensorStatistic: {"values": kwargs[HessianTensorStatistic.HESSIAN_INPUT_ACTIVATION_STATS]},
-        MeanVarianceTensorStatistic: {"values": kwargs[MeanVarianceTensorStatistic.MEAN_VARIANCE_STAT]},
-        MeanMagnitudeTensorStatistic: {"values": kwargs[MeanMagnitudeTensorStatistic.MEAN_MAGNITUDE_STAT]},
-        MaxVarianceTensorStatistic: {"values": kwargs[MaxVarianceTensorStatistic.MAX_VARIANCE_STAT]},
-        WeightQuantizationErrorTensorStatistic: {
-            "values": kwargs[WeightQuantizationErrorTensorStatistic.WEIGHT_QUANTIZATION_ERROR_STATS]
-        },
-        PercentileTensorStatistic: {"percentile_vs_values_dict": kwargs},
-    }
-
-    if statistic_container_cls in class_param_map:
-        return statistic_container_cls(**class_param_map[statistic_container_cls])
-
-    raise nncf.InternalError(
-        f"Statistic collector class {statistic_container_cls} is not supported by the TensorCollector class."
-    )
+    if issubclass(statistic_container_cls, PercentileTensorStatistic):  # TODO: could be unified?
+        if PercentileTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY in kwargs:
+            percentile_vs_values_dict = kwargs[PercentileTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY]
+        else:
+            percentile_vs_values_dict = {}
+            for (_, percentile), value in kwargs.items():
+                percentile_vs_values_dict[percentile] = value
+        return statistic_container_cls(percentile_vs_values_dict=percentile_vs_values_dict)
+    return statistic_container_cls(**kwargs)
