@@ -417,7 +417,7 @@ class OVMixedPrecisionAlgoBackend(OVWeightCompressionAlgoBackend):
         reducer = OVMaxVarianceReducer(reduction_axes, inplace=True)
         aggregator = MeanAggregator(num_samples=subset_size)
         collector = TensorCollector(MaxVarianceTensorStatistic)
-        collector.register_statistic_branch(MaxVarianceTensorStatistic.MAX_MAGNITUDE_STAT, reducer, aggregator)
+        collector.register_statistic_branch(MaxVarianceTensorStatistic.MAX_VARIANCE_STAT, reducer, aggregator)
         return collector
 
     @staticmethod
