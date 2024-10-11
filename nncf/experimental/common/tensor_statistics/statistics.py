@@ -165,12 +165,4 @@ class MeanMagnitudeTensorStatistic(TensorStatistic):
 def build_statistic_container(
     statistic_container_cls: Type[TensorStatistic], kwargs: Dict[Any, Any]
 ) -> TensorStatistic:
-    if issubclass(statistic_container_cls, PercentileTensorStatistic):  # TODO: could be unified?
-        if PercentileTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY in kwargs:
-            percentile_vs_values_dict = kwargs[PercentileTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY]
-        else:
-            percentile_vs_values_dict = {}
-            for (_, percentile), value in kwargs.items():
-                percentile_vs_values_dict[percentile] = value
-        return statistic_container_cls(percentile_vs_values_dict=percentile_vs_values_dict)
     return statistic_container_cls(**kwargs)
