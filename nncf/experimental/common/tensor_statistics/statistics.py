@@ -222,46 +222,41 @@ class MeanMagnitudeTensorStatistic(TensorStatistic):
         self.values = values
 
 
-def build_statistic_container(statistic_container_cls: Type[TensorStatistic], kwargs: Dict[Any, Any]):
-    if issubclass(statistic_container_cls, MinMaxTensorStatistic):
-        return statistic_container_cls(
-            min_values=kwargs[MinMaxTensorStatistic.MIN_STAT], max_values=kwargs[MinMaxTensorStatistic.MAX_STAT]
-        )
-    if issubclass(statistic_container_cls, MeanTensorStatistic):
-        return statistic_container_cls(
-            mean_values=kwargs[MeanTensorStatistic.MEAN_STAT], shape=kwargs[MeanTensorStatistic.SHAPE_STAT]
-        )
-    if issubclass(statistic_container_cls, RawTensorStatistic):
-        return statistic_container_cls(values=kwargs[RawTensorStatistic.VALUES_STATS])
-    if issubclass(statistic_container_cls, MedianMADTensorStatistic):
-        return statistic_container_cls(
-            median_values=kwargs[MedianMADTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY][
+def build_statistic_container(
+    statistic_container_cls: Type[TensorStatistic], kwargs: Dict[Any, Any]
+) -> TensorStatistic:
+    # Mapping of classes to their respective initialization parameters
+    class_param_map = {
+        MinMaxTensorStatistic: {
+            "min_values": kwargs[MinMaxTensorStatistic.MIN_STAT],
+            "max_values": kwargs[MinMaxTensorStatistic.MAX_STAT],
+        },
+        MeanTensorStatistic: {
+            "mean_values": kwargs[MeanTensorStatistic.MEAN_STAT],
+            "shape": kwargs[MeanTensorStatistic.SHAPE_STAT],
+        },
+        RawTensorStatistic: {"values": kwargs[RawTensorStatistic.VALUES_STATS]},
+        MedianMADTensorStatistic: {
+            "median_values": kwargs[MedianMADTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY][
                 MedianMADTensorStatistic.MEDIAN_VALUES_STAT
             ],
-            mad_values=kwargs[MedianMADTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY][
+            "mad_values": kwargs[MedianMADTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY][
                 MedianMADTensorStatistic.MAD_VALUES_STAT
             ],
-        )
-    if issubclass(statistic_container_cls, PercentileTensorStatistic):
-        if PercentileTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY in kwargs:
-            percentile_vs_values_dict = kwargs[PercentileTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY]
-        else:
-            percentile_vs_values_dict = {}
-            for (_, percentile), value in kwargs.items():
-                percentile_vs_values_dict[percentile] = value
-        return statistic_container_cls(percentile_vs_values_dict=percentile_vs_values_dict)
-    if issubclass(statistic_container_cls, HessianTensorStatistic):
-        return statistic_container_cls(values=kwargs[HessianTensorStatistic.HESSIAN_INPUT_ACTIVATION_STATS])
-    if issubclass(statistic_container_cls, MeanVarianceTensorStatistic):
-        return statistic_container_cls(values=kwargs[MeanVarianceTensorStatistic.MEAN_VARIANCE_STAT])
-    if issubclass(statistic_container_cls, MeanMagnitudeTensorStatistic):
-        return statistic_container_cls(values=kwargs[MeanMagnitudeTensorStatistic.MEAN_MAGNITUDE_STAT])
-    if issubclass(statistic_container_cls, MaxVarianceTensorStatistic):
-        return statistic_container_cls(values=kwargs[MaxVarianceTensorStatistic.MAX_VARIANCE_STAT])
-    if issubclass(statistic_container_cls, WeightQuantizationErrorTensorStatistic):
-        return statistic_container_cls(
-            values=kwargs[WeightQuantizationErrorTensorStatistic.WEIGHT_QUANTIZATION_ERROR_STATS]
-        )
+        },
+        HessianTensorStatistic: {"values": kwargs[HessianTensorStatistic.HESSIAN_INPUT_ACTIVATION_STATS]},
+        MeanVarianceTensorStatistic: {"values": kwargs[MeanVarianceTensorStatistic.MEAN_VARIANCE_STAT]},
+        MeanMagnitudeTensorStatistic: {"values": kwargs[MeanMagnitudeTensorStatistic.MEAN_MAGNITUDE_STAT]},
+        MaxVarianceTensorStatistic: {"values": kwargs[MaxVarianceTensorStatistic.MAX_VARIANCE_STAT]},
+        WeightQuantizationErrorTensorStatistic: {
+            "values": kwargs[WeightQuantizationErrorTensorStatistic.WEIGHT_QUANTIZATION_ERROR_STATS]
+        },
+        PercentileTensorStatistic: {"percentile_vs_values_dict": kwargs},
+    }
+
+    if statistic_container_cls in class_param_map:
+        return statistic_container_cls(**class_param_map[statistic_container_cls])
+
     raise nncf.InternalError(
         f"Statistic collector class {statistic_container_cls} is not supported by the TensorCollector class."
     )
