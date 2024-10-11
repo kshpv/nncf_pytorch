@@ -853,7 +853,7 @@ class TemplateTestStatisticsAggregator:
             for instance in product(*kwargs.values()):
                 yield dict(zip(keys, instance))
 
-        tensor_collector = TensorCollector()
+        tensor_collector = TensorCollector(None)
         statistics_points = StatisticPointsContainer()
         target_point_cls = self.get_target_point_cls()
         target_point_args = (TargetType.POST_LAYER_OPERATION, "split", 0)
@@ -917,7 +917,7 @@ class TemplateTestStatisticsAggregator:
         model = self.get_backend_model(dataset_samples)
         dummy_statistic_point = StatisticPoint(
             target_point=self.get_target_point(TargetType.POST_LAYER_OPERATION),
-            tensor_collector=TensorCollector(),
+            tensor_collector=TensorCollector(None),
             algorithm="dummy",
         )
         statistics_points = StatisticPointsContainer()

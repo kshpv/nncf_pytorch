@@ -369,7 +369,7 @@ class TemplateTestChannelAlignment:
                 return True
 
         algorithm = ChannelAlignment()
-        tensor_collector = TensorCollector()
+        tensor_collector = TensorCollector(None)
         if empty_statistics:
             stat_value = None, None
         else:
