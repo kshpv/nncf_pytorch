@@ -18,15 +18,12 @@ from nncf.common.graph import NNCFNode
 from nncf.common.graph.operator_metatypes import OperatorMetatype
 from nncf.common.graph.transformations.commands import TargetType
 from nncf.common.graph.utils import get_reduction_axes
-from nncf.experimental.common.tensor_statistics.collectors import HAWQAggregator
+from nncf.common.tensor_statistics.statistics import WCTensorStatistic
 from nncf.experimental.common.tensor_statistics.collectors import MeanAggregator
 from nncf.experimental.common.tensor_statistics.collectors import NoopAggregator
-from nncf.experimental.common.tensor_statistics.collectors import ShapeReducer
 from nncf.experimental.common.tensor_statistics.collectors import TensorCollector
-from nncf.experimental.common.tensor_statistics.statistics import HessianTensorStatistic
 from nncf.experimental.common.tensor_statistics.statistics import MaxVarianceTensorStatistic
 from nncf.experimental.common.tensor_statistics.statistics import MeanMagnitudeTensorStatistic
-from nncf.experimental.common.tensor_statistics.statistics import MeanTensorStatistic
 from nncf.experimental.common.tensor_statistics.statistics import MeanVarianceTensorStatistic
 from nncf.openvino.graph.metatypes import openvino_metatypes as om
 from nncf.openvino.graph.metatypes.groups import ATOMIC_ACTIVATIONS_OPERATIONS
@@ -36,14 +33,15 @@ from nncf.openvino.graph.node_utils import get_weight_channel_axes
 from nncf.openvino.graph.transformations.command_creation import OVCommandCreator
 from nncf.openvino.graph.transformations.commands import OVTargetPoint
 from nncf.openvino.rt_info import dump_parameters
-from nncf.openvino.statistics.collectors import NoopReducer
 from nncf.openvino.statistics.collectors import OVMaxVarianceReducer
 from nncf.openvino.statistics.collectors import OVMeanAbsMaxReducer
 from nncf.openvino.statistics.collectors import OVMeanReducer
 from nncf.openvino.statistics.collectors import OVMeanVarianceReducer
+from nncf.openvino.statistics.collectors import OVShapeReducer
 from nncf.parameters import CompressWeightsMode
 from nncf.quantization.algorithms.weight_compression.awq_patterns import get_awq_patterns
 from nncf.quantization.algorithms.weight_compression.backend import AWQAlgoBackend
+from nncf.quantization.algorithms.weight_compression.backend import MixedPrecisionAlgoBackend
 from nncf.quantization.algorithms.weight_compression.backend import WeightCompressionAlgoBackend
 from nncf.quantization.algorithms.weight_compression.config import WeightCompressionConfig
 from nncf.quantization.algorithms.weight_compression.config import WeightCompressionParameters
@@ -96,10 +94,10 @@ class OVWeightCompressionAlgoBackend(WeightCompressionAlgoBackend):
         self, reduction_axes: Tuple[int], subset_size: Optional[int] = None
     ) -> TensorCollector:
         mean_reducer = OVMeanReducer(reduction_axes, inplace=True)
-        shape_reducer = ShapeReducer()
-        collector = TensorCollector(MeanTensorStatistic)
-        collector.register_statistic_branch(MeanTensorStatistic.MEAN_STAT, mean_reducer, NoopAggregator(subset_size))
-        collector.register_statistic_branch(MeanTensorStatistic.SHAPE_STAT, shape_reducer, NoopAggregator(subset_size))
+        shape_reducer = OVShapeReducer(inplace=True)
+        collector = TensorCollector(WCTensorStatistic)
+        collector.register_statistic_branch(WCTensorStatistic.MEAN_STAT, mean_reducer, NoopAggregator(subset_size))
+        collector.register_statistic_branch(WCTensorStatistic.SHAPE_STAT, shape_reducer, NoopAggregator(subset_size))
         return collector
 
     @staticmethod
@@ -399,7 +397,7 @@ class OVAWQAlgoAlgoBackend(AWQAlgoBackend, OVWeightCompressionAlgoBackend):
         )
 
 
-class OVMixedPrecisionAlgoBackend(OVWeightCompressionAlgoBackend):
+class OVMixedPrecisionAlgoBackend(MixedPrecisionAlgoBackend, OVWeightCompressionAlgoBackend):
     @staticmethod
     def mean_variance_statistic_collector(
         reduction_axes: Tuple[int], subset_size: Optional[int] = None
@@ -428,12 +426,4 @@ class OVMixedPrecisionAlgoBackend(OVWeightCompressionAlgoBackend):
         aggregator = MeanAggregator(num_samples=subset_size)
         collector = TensorCollector(MeanMagnitudeTensorStatistic)
         collector.register_statistic_branch(MeanMagnitudeTensorStatistic.MEAN_MAGNITUDE_STAT, reducer, aggregator)
-        return collector
-
-    @staticmethod
-    def hawq_statistic_collector(subset_size: Optional[int] = None) -> TensorCollector:
-        reducer = NoopReducer()
-        aggregator = HAWQAggregator(num_samples=subset_size)
-        collector = TensorCollector(HessianTensorStatistic)
-        collector.register_statistic_branch(HessianTensorStatistic.HESSIAN_INPUT_ACTIVATION_STATS, reducer, aggregator)
         return collector

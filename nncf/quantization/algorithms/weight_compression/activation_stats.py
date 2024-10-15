@@ -8,22 +8,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from dataclasses import dataclass
-from typing import List, Tuple
 
+from functools import reduce
+from operator import mul
+from typing import Tuple
+
+from nncf.common.tensor_statistics.statistics import WCTensorStatistic
 from nncf.tensor import Tensor
 from nncf.tensor import functions as fns
 
 
-@dataclass
-class WCStatistics:
-    # List of N tensors of shape [HiddenDim] obtained by reducing activations along batch and seq. length dimensions
-    mean_values: List[Tensor]
-    # List of N tuples containing original shapes of activations before reduction
-    shapes: List[Tuple]
-
-
-def process_stats(stats: WCStatistics, subset_size: int) -> Tuple[Tensor, Tensor]:
+def process_stats(stats: WCTensorStatistic, subset_size: int) -> Tuple[Tensor, Tensor]:
     """
     A function for processing activations. Shared between AWQ, Scale Estimation and LoRA Correction algorithms.
 
@@ -38,7 +33,8 @@ def process_stats(stats: WCStatistics, subset_size: int) -> Tuple[Tensor, Tensor
 
     # prevent high memory and time consumption
     if X_full.shape[1] > subset_size:
-        lens = [shape[0] * shape[1] for shape in stats.shapes]
+        # activations were reduced across all but the last dimension
+        lens = [reduce(mul, shape[:-1], 1) for shape in stats.shapes]
         step = X_full.shape[1] // subset_size
         idxs = [i[0] for i in sorted(enumerate(lens), key=lambda x: -x[1])][::step]
         X = X_full[:, idxs]  # [HiddenDim, ~SubsetSize]

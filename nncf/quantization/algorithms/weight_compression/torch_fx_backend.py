@@ -22,10 +22,10 @@ from nncf.common.graph.graph import NNCFNode
 from nncf.common.graph.operator_metatypes import OperatorMetatype
 from nncf.common.graph.transformations.commands import TargetType
 from nncf.common.graph.transformations.layout import TransformationLayout
+from nncf.common.tensor_statistics.statistics import WCTensorStatistic
 from nncf.experimental.common.tensor_statistics.collectors import NoopAggregator
 from nncf.experimental.common.tensor_statistics.collectors import ShapeReducer
 from nncf.experimental.common.tensor_statistics.collectors import TensorCollector
-from nncf.experimental.common.tensor_statistics.statistics import MeanTensorStatistic
 from nncf.experimental.torch.fx.commands import FXApplyTransformationCommand
 from nncf.experimental.torch.fx.model_transformer import FXModelTransformer
 from nncf.experimental.torch.fx.node_utils import get_graph_node_by_name
@@ -116,9 +116,9 @@ class FXWeightCompressionAlgoBackend(WeightCompressionAlgoBackend):
     ) -> TensorCollector:
         mean_reducer = PTMeanReducer(reduction_axes)
         shape_reducer = ShapeReducer()
-        collector = TensorCollector(MeanTensorStatistic)
-        collector.register_statistic_branch(MeanTensorStatistic.MEAN_STAT, mean_reducer, NoopAggregator(subset_size))
-        collector.register_statistic_branch(MeanTensorStatistic.SHAPE_STAT, shape_reducer, NoopAggregator(subset_size))
+        collector = TensorCollector(WCTensorStatistic)
+        collector.register_statistic_branch(WCTensorStatistic.MEAN_STAT, mean_reducer, NoopAggregator(subset_size))
+        collector.register_statistic_branch(WCTensorStatistic.SHAPE_STAT, shape_reducer, NoopAggregator(subset_size))
         return collector
 
     @staticmethod

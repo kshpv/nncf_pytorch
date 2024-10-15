@@ -13,7 +13,7 @@ from abc import ABC
 from abc import abstractmethod
 from collections import defaultdict
 from collections import deque
-from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Type, TypeVar, Union
 
 import nncf
 import nncf.tensor.functions as fns
@@ -190,7 +190,7 @@ class TensorCollector:
     a dict could be collected by `get_statistics` call.
     """
 
-    def __init__(self, statistic_container: Optional[TensorStatistic] = None) -> None:
+    def __init__(self, statistic_container: Optional[Type[TensorStatistic]] = None) -> None:
         self._reducers: Set[TensorReducerBase] = set()
         self._aggregators: Dict[Tuple[int, int, int], AggregatorBase] = {}
         self._stat_container_kwargs_map: Dict[str, Tuple[int, int, int]] = {}
@@ -446,8 +446,8 @@ class RawReducer(NoopReducer):
 
 
 class ShapeReducer(TensorReducerBase):
-    def __init__(self):
-        super().__init__(inplace=False)
+    def __init__(self, inplace: bool = False):
+        super().__init__(inplace=inplace)
 
     def _reduce_out_of_place(self, x: List[TensorType]) -> List[TensorType]:
         return [Tensor(x[0].shape)]
