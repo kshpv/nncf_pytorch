@@ -32,7 +32,7 @@ class MinMaxTensorStatistic(TensorStatistic):
     max_values: Tensor
 
     def get_data(self):
-        return self.min_values.data, self.max_values.data
+        return self.min_values, self.max_values
 
     def load_data(self, min_values, max_values):
         self.min_values = min_values
@@ -46,7 +46,7 @@ class AbsMaxTensorStatistic(TensorStatistic):
     abs_max: Tensor
 
     def get_data(self):
-        return self.abs_max.data
+        return self.abs_max
 
     def load_data(self, abs_max):
         self.abs_max = abs_max
@@ -130,7 +130,7 @@ class HessianTensorStatistic(TensorStatistic):
     hessian: Tensor
 
     def get_data(self):
-        return self.values
+        return self.hessian
 
     def load_data(self, hessian):
         self.hessian = hessian
@@ -178,4 +178,21 @@ class MeanMagnitudeTensorStatistic(TensorStatistic):
 def build_statistic_container(
     statistic_container_cls: Type[TensorStatistic], kwargs: Dict[Any, Any]
 ) -> TensorStatistic:
+    if issubclass(statistic_container_cls, PercentileTensorStatistic):
+        if PercentileTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY in kwargs:
+            percentile_vs_values_dict = kwargs[PercentileTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY]
+        else:
+            percentile_vs_values_dict = {}
+            for (_, percentile), value in kwargs.items():
+                percentile_vs_values_dict[percentile] = value
+        return statistic_container_cls(percentile_vs_values_dict=percentile_vs_values_dict)
+    if issubclass(statistic_container_cls, MedianMADTensorStatistic):
+        return statistic_container_cls(
+            median_values=kwargs[MedianMADTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY][
+                MedianMADTensorStatistic.MEDIAN_VALUES_STAT
+            ],
+            mad_values=kwargs[MedianMADTensorStatistic.TENSOR_STATISTIC_OUTPUT_KEY][
+                MedianMADTensorStatistic.MAD_VALUES_STAT
+            ],
+        )
     return statistic_container_cls(**kwargs)

@@ -889,8 +889,6 @@ class MinMaxQuantization(Algorithm):
         statistic_points: Optional[StatisticPointsContainer] = None,
         dataset: Optional[Dataset] = None,
     ) -> TModel:
-        statistic_points.load_statistics_from_file("./statistics.pkl")
-        statistic_points.dump_statistics("./")
         transformation_layout = TransformationLayout()
         model_transformer = ModelTransformerFactory.create(model)
         quantization_target_points, unified_scale_groups = self._get_quantization_target_points(model, graph)

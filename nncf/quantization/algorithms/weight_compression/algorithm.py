@@ -674,10 +674,9 @@ class WeightCompression(Algorithm):
             for tensor_collector in statistic_points.get_algo_statistics_for_node(
                 act_node.node_name, partial(input_filter_func, port_id=output_port_id), self._algorithm_key
             ):
-                mean_values.extend(
-                    value[0, 0] for value in tensor_collector.get_statistics()[self._backend_entity.MEAN_STAT]
-                )
-                shapes.extend(tensor_collector.get_statistics()[self._backend_entity.SHAPE_STAT])
+                mean_value, shape = tensor_collector.get_statistics().get_data()
+                mean_values.extend(value[0, 0] for value in mean_value)
+                shapes.extend(shape)
             stats = WCStatistics(mean_values, shapes)
             # Each activation node may have multiple MatMul nodes which it is an input to
             for node in matmul_nodes:

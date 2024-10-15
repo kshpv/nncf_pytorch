@@ -13,7 +13,7 @@ from abc import ABC
 from abc import abstractmethod
 from collections import defaultdict
 from collections import deque
-from typing import Any, Dict, List, Optional, Set, Tuple, Type, TypeVar, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar, Union
 
 import nncf
 import nncf.tensor.functions as fns
@@ -190,7 +190,7 @@ class TensorCollector:
     a dict could be collected by `get_statistics` call.
     """
 
-    def __init__(self, statistic_container: Type[TensorStatistic]) -> None:
+    def __init__(self, statistic_container: Optional[TensorStatistic] = None) -> None:
         self._reducers: Set[TensorReducerBase] = set()
         self._aggregators: Dict[Tuple[int, int, int], AggregatorBase] = {}
         self._stat_container_kwargs_map: Dict[str, Tuple[int, int, int]] = {}
@@ -326,6 +326,9 @@ class TensorCollector:
         for container_key, branch_key in self._stat_container_kwargs_map.items():
             kwargs[container_key] = aggregated_values[branch_key]
 
+        if not self._stat_container:
+            return kwargs
+
         self.statistics = build_statistic_container(self._stat_container, kwargs)
         return self.statistics
 
@@ -401,7 +404,7 @@ class MergedTensorCollector(TensorCollector):
         """
         stat_container = tensor_collectors[0]._stat_container
         for tc in tensor_collectors[1:]:
-            assert tc._stat_container == stat_container
+            assert type(tc._stat_container) is type(stat_container)
         super().__init__(stat_container)
         aggregators: Dict[Tuple[int, int, int], List[Tuple[TensorCollector, AggregatorBase]]] = defaultdict(list)
         for tensor_collector in tensor_collectors:
