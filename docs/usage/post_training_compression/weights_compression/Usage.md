@@ -182,7 +182,7 @@ compressed_model = compress_weights(model, mode=CompressWeightsMode.E2M1, group_
 
 #### Caching Statistics
 
-To optimize performance and reuse statistics data across multiple configurations, the `statistics_path` option can be used. This feature allows caching of computed statistics, so they can be loaded from a specified file path rather than being recalculated with each configuration. This can significantly reduce the setup time for models that require extensive statistical computations.
+To optimize performance and reuse statistics data across multiple configurations, the `statistics_path` option can be used. This feature allows caching of computed statistics, so they can be loaded from a specified file path rather than being recalculated with each configuration. It can significantly reduce the compression time in further compression iterations of the same model and is recommended when you need to find optimal compression parameters.
 
 To enable statistics caching, set the `statistics_path` parameter to the desired file path location.
 
